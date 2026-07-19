@@ -1,4 +1,5 @@
 import time
+import traceback
 from datetime import datetime
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight
 from algorithms import data_fetcher, v4, v5_1
@@ -140,6 +141,7 @@ def tick_engine():
                         
     except Exception as e:
         print(f"Engine Tick Error: {e}")
+        traceback.print_exc()
         db.rollback()
     finally:
         db.close()

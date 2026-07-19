@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
+import traceback
 
 def get_top_volume_symbols(limit=30):
     """Fetch Top N USDT pairs by 24h volume on Binance (Free, No API Key)"""
@@ -9,6 +10,10 @@ def get_top_volume_symbols(limit=30):
         response = requests.get(url, timeout=5)
         data = response.json()
         
+        if not isinstance(data, list):
+            print(f"Binance API error or unexpected format: {data}")
+            return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"] # Fallback
+            
         # Filter for USDT pairs, exclude stablecoins/derivatives if possible
         usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
         
@@ -22,6 +27,7 @@ def get_top_volume_symbols(limit=30):
             
         return symbols
     except Exception as e:
+        traceback.print_exc()
         print(f"Error fetching symbols: {e}")
         return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"] # Fallback
 
@@ -48,6 +54,7 @@ def fetch_klines(symbol, interval="4h", limit=250):
             
         return df[['open', 'high', 'low', 'close', 'volume']]
     except Exception as e:
+        traceback.print_exc()
         print(f"Error fetching klines for {symbol}: {e}")
         return None
 

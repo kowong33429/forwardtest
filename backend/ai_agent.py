@@ -1,6 +1,7 @@
 import os
 from google import genai
 import requests
+import traceback
 
 def fetch_crypto_news():
     """
@@ -19,6 +20,7 @@ def fetch_crypto_news():
         else:
             return "No breaking news found."
     except Exception as e:
+        traceback.print_exc()
         return f"Error fetching news: {e}"
 
 def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
@@ -75,6 +77,7 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
         result = json.loads(text.strip())
         return result
     except Exception as e:
+        traceback.print_exc()
         return {
             "summary": f"Failed to generate insight: {e}",
             "macro_context": "Error parsing AI response.",
@@ -97,6 +100,7 @@ def send_telegram_notification(message: str):
     try:
         requests.post(url, json=payload, timeout=5)
     except Exception as e:
+        traceback.print_exc()
         print(f"Failed to send Telegram message: {e}")
 
 def run_daily_optimizer(db, portfolio_id: int):
@@ -168,6 +172,7 @@ def run_daily_optimizer(db, portfolio_id: int):
         ai_1_3_executor(portfolio.algorithm_name, result)
         return result
     except Exception as e:
+        traceback.print_exc()
         print(f"AI 1.2 failed: {e}")
         return None
 

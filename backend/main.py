@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import traceback
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -39,6 +41,15 @@ async def lifespan(app: FastAPI):
     print("Background scheduler shutdown.")
 
 app = FastAPI(title="Forward Testing Platform API", lifespan=lifespan)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"Global Error handling request {request.method} {request.url}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error", "details": str(exc)},
+    )
 
 app.add_middleware(
     CORSMiddleware,
