@@ -2,15 +2,47 @@ import requests
 import pandas as pd
 import numpy as np
 import traceback
+import time
+
+BINANCE_BASE_URLS = [
+    "https://data-api.binance.vision", # Official data endpoint, usually bypasses US blocks
+    "https://api1.binance.com",
+    "https://api2.binance.com",
+    "https://api3.binance.com",
+    "https://api.binance.com"
+]
+
+def safe_binance_request(endpoint):
+    """
+    Tries multiple Binance base URLs until one succeeds.
+    Useful for bypassing geo-blocks on cloud servers.
+    """
+    last_error = None
+    for base_url in BINANCE_BASE_URLS:
+        url = f"{base_url}{endpoint}"
+        try:
+            response = requests.get(url, timeout=5)
+            # If we get a 451 (Unavailable For Legal Reasons) or similar geo-block code, we continue
+            if response.status_code == 200:
+                data = response.json()
+                # Sometimes it returns 200 but contains an error msg inside json
+                if isinstance(data, dict) and data.get("code") and data.get("msg"):
+                    if "restricted location" in data.get("msg").lower():
+                        continue # Try next URL
+                return data
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            continue
+            
+    print(f"All Binance endpoints failed. Last error: {last_error}")
+    return None
 
 def get_top_volume_symbols(limit=30):
     """Fetch Top N USDT pairs by 24h volume on Binance (Free, No API Key)"""
-    url = "https://api.binance.com/api/v3/ticker/24hr"
     try:
-        response = requests.get(url, timeout=5)
-        data = response.json()
+        data = safe_binance_request("/api/v3/ticker/24hr")
         
-        if not isinstance(data, list):
+        if not data or not isinstance(data, list):
             print(f"Binance API error or unexpected format: {data}")
             return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"] # Fallback
             
@@ -33,11 +65,10 @@ def get_top_volume_symbols(limit=30):
 
 def fetch_klines(symbol, interval="4h", limit=250):
     """Fetch recent OHLCV data for a symbol"""
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     try:
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        if not isinstance(data, list):
+        data = safe_binance_request(f"/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+        
+        if not data or not isinstance(data, list):
             return None
             
         df = pd.DataFrame(data, columns=[
@@ -70,11 +101,10 @@ def get_market_data():
 
 def get_live_prices(limit=10):
     """Fetch live prices for the top N USDT pairs"""
-    url = "https://api.binance.com/api/v3/ticker/24hr"
     try:
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        if not isinstance(data, list):
+        data = safe_binance_request("/api/v3/ticker/24hr")
+        
+        if not data or not isinstance(data, list):
             return []
             
         usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
