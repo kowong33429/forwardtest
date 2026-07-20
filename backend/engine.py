@@ -1,5 +1,6 @@
 import time
 import traceback
+import threading
 from datetime import datetime
 import logging
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight
@@ -14,11 +15,19 @@ ALGORITHMS = {
     "V5.1 God Mode": v5_1.get_target_allocations
 }
 
+# Global lock to prevent race conditions during Force Tick (Double Spending)
+engine_lock = threading.Lock()
+
 def tick_engine():
     """
     Core paper trading engine loop.
     """
-    logger.info("=== Engine Tick Started ===")
+    if not engine_lock.acquire(blocking=False):
+        logger.warning("Engine tick is already running. Skipping this concurrent tick request.")
+        return
+        
+    try:
+        logger.info("=== Engine Tick Started ===")
     
     # 1. Fetch Market Data
     logger.info("Step 1: Fetching current market data...")
@@ -152,6 +161,7 @@ def tick_engine():
         db.rollback()
     finally:
         db.close()
+        engine_lock.release()
         
     logger.info("=== Engine Tick Completed ===")
 

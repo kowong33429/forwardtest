@@ -115,6 +115,33 @@ export default function Home() {
 
   const displayPortfolios = viewMode === "demo" ? DEMO_PORTFOLIOS : portfolios;
 
+  const calculateTotalValue = (port: any) => {
+    let total = port.balance_usd;
+    if (port.positions) {
+      port.positions.forEach((pos: any) => {
+        const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
+        total += pos.amount * livePrice;
+      });
+    }
+    return total;
+  };
+
+  const groupPositions = (positions: any[]) => {
+    if (!positions) return [];
+    const grouped: Record<string, any> = {};
+    positions.forEach(pos => {
+      if (!grouped[pos.symbol]) {
+        grouped[pos.symbol] = { ...pos };
+      } else {
+        const totalAmount = grouped[pos.symbol].amount + pos.amount;
+        const avgPrice = ((grouped[pos.symbol].amount * grouped[pos.symbol].avg_entry_price) + (pos.amount * pos.avg_entry_price)) / totalAmount;
+        grouped[pos.symbol].amount = totalAmount;
+        grouped[pos.symbol].avg_entry_price = avgPrice;
+      }
+    });
+    return Object.values(grouped);
+  };
+
   if (loading) return <div className="container" style={{textAlign: 'center', marginTop: '50px'}}>Loading Dashboard...</div>;
 
   return (
@@ -194,9 +221,17 @@ export default function Home() {
             displayPortfolios.map(port => (
               <div className="card" key={port.id}>
                 <h2>{port.algorithm_name}</h2>
-                <div className="balance">${port.balance_usd.toFixed(2)}</div>
+                <div className="balance" style={{ fontSize: '2.5rem' }}>
+                  ${calculateTotalValue(port).toFixed(2)}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                  Total Value
+                </div>
+                <div style={{ color: 'var(--success)', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                  Cash Balance: ${port.balance_usd.toFixed(2)}
+                </div>
                 
-                <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px'}}>Current Positions</h3>
+                <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem'}}>Current Positions</h3>
                 {port.positions && port.positions.length > 0 ? (
                   <table>
                     <thead>
@@ -207,8 +242,8 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody>
-                      {port.positions.map((pos: any) => (
-                        <tr key={pos.id}>
+                      {groupPositions(port.positions).map((pos: any) => (
+                        <tr key={pos.symbol}>
                           <td style={{fontWeight: '600'}}>{pos.symbol}</td>
                           <td>{pos.amount.toFixed(4)}</td>
                           <td>${pos.avg_entry_price.toFixed(4)}</td>
