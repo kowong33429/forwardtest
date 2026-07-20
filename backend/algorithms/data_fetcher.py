@@ -3,6 +3,10 @@ import pandas as pd
 import numpy as np
 import traceback
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("DataFetcher")
 
 BINANCE_BASE_URLS = [
     "https://data-api.binance.vision", # Official data endpoint, usually bypasses US blocks
@@ -17,24 +21,33 @@ def safe_binance_request(endpoint):
     Tries multiple Binance base URLs until one succeeds.
     Useful for bypassing geo-blocks on cloud servers.
     """
+    logger.info(f"Initiating Binance API call for endpoint: {endpoint}")
     last_error = None
     for base_url in BINANCE_BASE_URLS:
         url = f"{base_url}{endpoint}"
+        logger.info(f"Attempting GET {url}")
         try:
             response = requests.get(url, timeout=5)
+            logger.info(f"Response from {url} - Status Code: {response.status_code}")
+            
             # If we get a 451 (Unavailable For Legal Reasons) or similar geo-block code, we continue
             if response.status_code == 200:
                 data = response.json()
                 # Sometimes it returns 200 but contains an error msg inside json
                 if isinstance(data, dict) and data.get("code") and data.get("msg"):
                     if "restricted location" in data.get("msg").lower():
+                        logger.warning(f"Geo-blocked at {url}: {data.get('msg')}")
                         continue # Try next URL
+                logger.info(f"Successfully fetched data from {url}. Payload size: {len(str(data))} characters.")
                 return data
+            else:
+                logger.warning(f"Failed with status {response.status_code} at {url}: {response.text[:100]}")
         except requests.exceptions.RequestException as e:
+            logger.error(f"Network error at {url}: {e}")
             last_error = e
             continue
             
-    print(f"All Binance endpoints failed. Last error: {last_error}")
+    logger.error(f"CRITICAL: All Binance endpoints failed for endpoint {endpoint}. Last error: {last_error}")
     return None
 
 def get_top_volume_symbols(limit=30):

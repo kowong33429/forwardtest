@@ -2,6 +2,10 @@ import os
 from google import genai
 import requests
 import traceback
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("AIAgent")
 
 def fetch_crypto_news():
     """
@@ -61,10 +65,15 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     """
     
     try:
+        logger.info(f"Calling Gemini API (model: gemini-3.1-pro) for trade insight. Symbol: {symbol}, Action: {action}")
+        logger.info(f"Prompt snippet: {prompt[:100]}...")
+        
         response = client.models.generate_content(
             model='gemini-3.1-pro',
             contents=prompt,
         )
+        
+        logger.info(f"Gemini API call successful. Response length: {len(response.text)} chars.")
         # Parse JSON from response
         text = response.text
         # Clean markdown code block if present
@@ -75,8 +84,10 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
             
         import json
         result = json.loads(text.strip())
+        logger.info(f"Successfully parsed Gemini JSON response.")
         return result
     except Exception as e:
+        logger.error(f"Gemini API call failed: {e}")
         traceback.print_exc()
         return {
             "summary": f"Failed to generate insight: {e}",

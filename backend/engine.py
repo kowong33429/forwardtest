@@ -1,9 +1,13 @@
 import time
 import traceback
 from datetime import datetime
+import logging
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight
 from algorithms import data_fetcher, v4, v5_1
 from ai_agent import generate_trade_insight
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("TradingEngine")
 
 ALGORITHMS = {
     "V4.0 Aggressive": v4.get_target_allocations,
@@ -13,18 +17,17 @@ ALGORITHMS = {
 def tick_engine():
     """
     Core paper trading engine loop.
-    1. Fetches current market data.
-    2. Runs each algorithm.
-    3. Rebalances portfolios.
-    4. Triggers AI insights on sells.
     """
-    print(f"[{datetime.utcnow()}] Engine Tick Started...")
+    logger.info("=== Engine Tick Started ===")
     
     # 1. Fetch Market Data
+    logger.info("Step 1: Fetching current market data...")
     market_data = data_fetcher.get_market_data()
     if not market_data:
-        print("Failed to fetch market data. Aborting tick.")
+        logger.error("Failed to fetch market data. Aborting tick.")
         return
+        
+    logger.info(f"Successfully fetched market data for {len(market_data)} symbols.")
         
     db = SessionLocal()
     
@@ -38,11 +41,12 @@ def tick_engine():
                 db.commit()
                 db.refresh(portfolio)
                 
-            print(f"Processing {algo_name}... Balance: ${portfolio.balance_usd:.2f}")
+            logger.info(f"Step 2: Processing algorithm '{algo_name}'... Current Balance: ${portfolio.balance_usd:.2f}")
             
             # 3. Get current holdings
             positions = db.query(Position).filter(Position.portfolio_id == portfolio.id).all()
             current_holdings = [p.symbol for p in positions]
+            logger.info(f"  Current holdings for {algo_name}: {current_holdings}")
             
             # Calculate total portfolio value (cash + assets)
             total_value = portfolio.balance_usd
@@ -54,12 +58,15 @@ def tick_engine():
                 if pos.symbol in current_prices:
                     total_value += pos.amount * current_prices[pos.symbol]
                     
-            print(f"  Total Estimated Value: ${total_value:.2f}")
+            logger.info(f"  Total Estimated Value: ${total_value:.2f}")
             
             # 4. Get target allocations
+            logger.info(f"Step 3: Calculating target allocations for {algo_name}...")
             targets = algo_func(market_data, current_holdings=current_holdings)
+            logger.info(f"  Target Allocations: {targets}")
             
             # 5. Execute Trades (Sells first to free up cash)
+            logger.info(f"Step 4: Executing Trades for {algo_name}...")
             # Find positions not in targets, or needing reduction
             for pos in positions:
                 sym = pos.symbol
@@ -73,7 +80,7 @@ def tick_engine():
                 # If target is 0, liquidate fully
                 if target_weight == 0:
                     profit_pct = ((current_price - pos.avg_entry_price) / pos.avg_entry_price) * 100
-                    print(f"  [SELL] Liquidating {sym} at ${current_price:.4f} (Profit: {profit_pct:.2f}%)")
+                    logger.info(f"  [SELL] Liquidating {sym} at ${current_price:.4f} (Profit: {profit_pct:.2f}%)")
                     
                     portfolio.balance_usd += pos.amount * current_price
                     
@@ -119,7 +126,7 @@ def tick_engine():
                         buy_amount = target_usd / current_price
                         portfolio.balance_usd -= target_usd
                         
-                        print(f"  [BUY] Buying {sym} at ${current_price:.4f} for ${target_usd:.2f}")
+                        logger.info(f"  [BUY] Buying {sym} at ${current_price:.4f} for ${target_usd:.2f}")
                         
                         trade = Trade(
                             portfolio_id=portfolio.id,
@@ -140,13 +147,13 @@ def tick_engine():
                         db.commit()
                         
     except Exception as e:
-        print(f"Engine Tick Error: {e}")
+        logger.error(f"Engine Tick Error: {e}")
         traceback.print_exc()
         db.rollback()
     finally:
         db.close()
         
-    print(f"[{datetime.utcnow()}] Engine Tick Completed.")
+    logger.info("=== Engine Tick Completed ===")
 
 if __name__ == "__main__":
     tick_engine()
