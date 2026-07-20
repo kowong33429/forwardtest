@@ -74,20 +74,24 @@ export default function Home() {
 
   return (
     <>
-      {prices.length > 0 && (
-        <div className="ticker-wrap">
-          <div className="ticker">
-            {prices.map((p, i) => (
+      <div className="ticker-wrap">
+        <div className="ticker" style={{ animationDuration: prices.length > 0 ? '20s' : '0s' }}>
+          {prices.length > 0 ? (
+            prices.map((p, i) => (
               <div className="ticker-item" key={i}>
                 {p.symbol}: ${p.price.toFixed(4)} 
                 <span style={{ color: p.change >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                   {p.change >= 0 ? '+' : ''}{p.change.toFixed(2)}%
                 </span>
               </div>
-            ))}
-          </div>
+            ))
+          ) : (
+            <div className="ticker-item" style={{ color: 'var(--text-muted)' }}>
+              ⚠️ Cannot connect to Backend API. Live market data unavailable. Please check backend server.
+            </div>
+          )}
         </div>
-      )}
+      </div>
       
       <div className="container">
         <div className="header">
