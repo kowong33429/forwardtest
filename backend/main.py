@@ -100,6 +100,60 @@ def force_optimize(db: Session = Depends(get_db)):
         results.append({"portfolio": p.algorithm_name, "optimization": res})
     return {"status": "success", "message": "Optimization triggered", "results": results}
 
+@app.get("/market/prices")
+def get_prices():
+    from algorithms import data_fetcher
+    prices = data_fetcher.get_live_prices(10)
+    return {"status": "success", "data": prices}
+
+@app.post("/engine/seed_test_data")
+def seed_test_data(db: Session = Depends(get_db)):
+    # Create portfolios if they don't exist
+    portfolios_names = ["V4.0 Aggressive", "V5.1 God Mode"]
+    for name in portfolios_names:
+        port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()
+        if not port:
+            port = database.Portfolio(algorithm_name=name, balance_usd=10000.0)
+            db.add(port)
+            db.commit()
+    
+    portfolios = db.query(database.Portfolio).all()
+    if not portfolios:
+        return {"status": "error", "message": "Failed to create portfolios"}
+        
+    p1 = portfolios[0]
+    p2 = portfolios[1] if len(portfolios) > 1 else portfolios[0]
+
+    # Add dummy positions
+    db.query(database.Position).delete()
+    db.add(database.Position(portfolio_id=p1.id, symbol="BTCUSDT", amount=0.15, avg_entry_price=64000.0))
+    db.add(database.Position(portfolio_id=p1.id, symbol="ETHUSDT", amount=2.5, avg_entry_price=3400.0))
+    db.add(database.Position(portfolio_id=p2.id, symbol="SOLUSDT", amount=50.0, avg_entry_price=135.0))
+    db.commit()
+
+    # Add dummy trades and insights
+    db.query(database.AIInsight).delete()
+    db.query(database.Trade).delete()
+    
+    t1 = database.Trade(portfolio_id=p1.id, symbol="SOLUSDT", action="SELL", amount=20.0, price=145.5, profit_pct=7.77)
+    db.add(t1)
+    db.commit()
+    db.refresh(t1)
+    
+    insight1 = database.AIInsight(
+        trade_id=t1.id, 
+        summary="SOL experienced a strong breakout following network upgrade news. Taking partial profits.",
+        macro_context="Broader crypto market is bullish. Fed rate pause provided tailwinds.",
+        lessons_learned="Holding winners longer works in trending markets, but taking 7% profit is a safe play."
+    )
+    db.add(insight1)
+    
+    t2 = database.Trade(portfolio_id=p2.id, symbol="BTCUSDT", action="BUY", amount=0.05, price=65000.0)
+    db.add(t2)
+    db.commit()
+
+    return {"status": "success", "message": "Demo data generated successfully"}
+
 # Entry point for running the server
 if __name__ == "__main__":
     import uvicorn

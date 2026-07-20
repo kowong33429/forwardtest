@@ -67,3 +67,30 @@ def get_market_data():
         if df is not None and not df.empty:
             data_dict[sym] = df
     return data_dict
+
+def get_live_prices(limit=10):
+    """Fetch live prices for the top N USDT pairs"""
+    url = "https://api.binance.com/api/v3/ticker/24hr"
+    try:
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        if not isinstance(data, list):
+            return []
+            
+        usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
+        usdt_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
+        
+        # Format for frontend
+        prices = [{"symbol": p['symbol'], "price": float(p['lastPrice']), "change": float(p['priceChangePercent'])} for p in usdt_pairs[:limit]]
+        
+        # Ensure BTC is always there for demo purposes
+        if not any(p['symbol'] == 'BTCUSDT' for p in prices):
+            btc_data = next((p for p in usdt_pairs if p['symbol'] == 'BTCUSDT'), None)
+            if btc_data:
+                prices[0] = {"symbol": btc_data['symbol'], "price": float(btc_data['lastPrice']), "change": float(btc_data['priceChangePercent'])}
+                
+        return prices
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Error fetching live prices: {e}")
+        return []
