@@ -27,21 +27,20 @@ def tick_engine():
         logger.warning("Engine tick is already running. Skipping this concurrent tick request.")
         return
         
+    db = None
     try:
         logger.info("=== Engine Tick Started ===")
     
-    # 1. Fetch Market Data
-    logger.info("Step 1: Fetching current market data...")
-    market_data = data_fetcher.get_market_data()
-    if not market_data:
-        logger.error("Failed to fetch market data. Aborting tick.")
-        return
-        
-    logger.info(f"Successfully fetched market data for {len(market_data)} symbols.")
-        
-    db = SessionLocal()
-    
-    try:
+        # 1. Fetch Market Data
+        logger.info("Step 1: Fetching current market data...")
+        market_data = data_fetcher.get_market_data()
+        if not market_data:
+            logger.error("Failed to fetch market data. Aborting tick.")
+            return
+            
+        logger.info(f"Successfully fetched market data for {len(market_data)} symbols.")
+            
+        db = SessionLocal()
         for algo_name, algo_func in ALGORITHMS.items():
             # 2. Get or create portfolio
             portfolio = db.query(Portfolio).filter(Portfolio.algorithm_name == algo_name).first()
@@ -167,9 +166,11 @@ def tick_engine():
     except Exception as e:
         logger.error(f"Engine Tick Error: {e}")
         traceback.print_exc()
-        db.rollback()
+        if db:
+            db.rollback()
     finally:
-        db.close()
+        if db:
+            db.close()
         engine_lock.release()
         
     logger.info("=== Engine Tick Completed ===")
