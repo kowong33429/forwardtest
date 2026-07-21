@@ -27,6 +27,7 @@ class Portfolio(Base):
     __tablename__ = "portfolios"
     id = Column(Integer, primary_key=True, index=True)
     algorithm_name = Column(String, unique=True, index=True) # e.g. "V4", "V5.1"
+    description = Column(String, nullable=True) # Algorithm summary
     balance_usd = Column(Float, default=10000.0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -68,6 +69,13 @@ class AIInsight(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     trade = relationship("Trade", back_populates="insight")
+
+class EngineLog(Base):
+    __tablename__ = "engine_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    logs_json = Column(String) # JSON string of calculation details
 
 # Create tables
 Base.metadata.create_all(bind=engine)

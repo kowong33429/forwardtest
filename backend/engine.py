@@ -3,7 +3,8 @@ import traceback
 import threading
 from datetime import datetime
 import logging
-from database import SessionLocal, Portfolio, Position, Trade, AIInsight
+import json
+from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
 from algorithms import data_fetcher, v4, v5_1
 from ai_agent import generate_trade_insight
 
@@ -71,8 +72,16 @@ def tick_engine():
             
             # 4. Get target allocations
             logger.info(f"Step 3: Calculating target allocations for {algo_name}...")
-            targets = algo_func(market_data, current_holdings=current_holdings)
+            targets, details = algo_func(market_data, current_holdings=current_holdings)
             logger.info(f"  Target Allocations: {targets}")
+            
+            # Save Engine Log for calculation process
+            engine_log = EngineLog(
+                portfolio_id=portfolio.id,
+                logs_json=json.dumps(details)
+            )
+            db.add(engine_log)
+            db.commit()
             
             # 5. Execute Trades (Sells first to free up cash)
             logger.info(f"Step 4: Executing Trades for {algo_name}...")

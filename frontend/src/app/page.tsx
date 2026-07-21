@@ -56,6 +56,25 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<"live" | "demo">("live");
+  const [engineLogs, setEngineLogs] = useState<Record<number, any[]>>({});
+  const [logsLoading, setLogsLoading] = useState<Record<number, boolean>>({});
+
+  const fetchEngineLogs = async (portfolioId: number) => {
+    if (viewMode === "demo") {
+      alert("Logs are not available in demo mode.");
+      return;
+    }
+    setLogsLoading(prev => ({...prev, [portfolioId]: true}));
+    try {
+      const res = await fetch(`${API_URL}/engine_logs/${portfolioId}`);
+      const data = await res.json();
+      setEngineLogs(prev => ({...prev, [portfolioId]: data}));
+    } catch (e) {
+      console.error("Error fetching logs:", e);
+    } finally {
+      setLogsLoading(prev => ({...prev, [portfolioId]: false}));
+    }
+  };
 
   const fetchPortfolios = async () => {
     try {
@@ -221,6 +240,11 @@ export default function Home() {
             displayPortfolios.map(port => (
               <div className="card" key={port.id}>
                 <h2>{port.algorithm_name}</h2>
+                {port.description && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem', fontStyle: 'italic' }}>
+                    {port.description}
+                  </p>
+                )}
                 <div className="balance" style={{ fontSize: '2.5rem' }}>
                   ${calculateTotalValue(port).toFixed(2)}
                 </div>
@@ -263,13 +287,15 @@ export default function Home() {
                     port.trades.map((trade: any) => (
                       <div key={trade.id} style={{marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', alignItems: 'center'}}>
-                          <span className={`badge ${trade.action.toLowerCase()}`}>{trade.action} {trade.symbol}</span>
+                          <span style={{ fontWeight: 'bold', color: trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)' }}>
+                            {trade.action === 'BUY' ? 'Bought' : 'Sold'} {trade.amount.toFixed(4)} {trade.symbol}
+                          </span>
                           <span style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>
                             {new Date(trade.timestamp).toLocaleString()}
                           </span>
                         </div>
-                        <div style={{fontSize: '0.95rem'}}>
-                          Amount: {trade.amount.toFixed(4)} @ ${trade.price.toFixed(4)}
+                        <div style={{fontSize: '0.95rem', color: 'var(--text-muted)'}}>
+                          Price: ${trade.price.toFixed(4)} / Total: ${(trade.amount * trade.price).toFixed(2)} USDT
                           {trade.profit_pct !== null && (
                             <span style={{marginLeft: '1rem', fontWeight: 'bold', color: trade.profit_pct >= 0 ? 'var(--success)' : 'var(--danger)'}}>
                               Profit: {trade.profit_pct > 0 ? '+' : ''}{trade.profit_pct.toFixed(2)}%
@@ -289,6 +315,43 @@ export default function Home() {
                     ))
                   ) : (
                     <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>No trades yet.</p>
+                  )}
+                </div>
+
+                {/* Calculation Details Section */}
+                <h3 style={{marginTop: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                  Calculation Details
+                  <button 
+                    onClick={() => fetchEngineLogs(port.id)}
+                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '0.2rem 0.5rem', borderRadius: '5px', cursor: 'pointer', fontSize: '0.8rem' }}
+                    disabled={logsLoading[port.id]}
+                  >
+                    {logsLoading[port.id] ? 'Loading...' : 'Refresh Logs'}
+                  </button>
+                </h3>
+                
+                <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '0.5rem', marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '10px'}}>
+                  {engineLogs[port.id] && engineLogs[port.id].length > 0 ? (
+                    engineLogs[port.id].map((log: any) => {
+                      const details = JSON.parse(log.logs_json || "[]");
+                      return (
+                        <div key={log.id} style={{marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
+                          <div style={{color: 'var(--accent)', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 'bold'}}>
+                            Tick: {new Date(log.timestamp).toLocaleString()}
+                          </div>
+                          {details.map((d: any, idx: number) => (
+                            <div key={idx} style={{ fontSize: '0.9rem', marginBottom: '0.3rem', marginLeft: '0.5rem', borderLeft: '2px solid rgba(255,255,255,0.2)', paddingLeft: '0.8rem' }}>
+                              <strong style={{color: '#fff'}}>{d.step}:</strong> <span style={{color: 'var(--success)'}}>{d.value}</span>
+                              <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>{d.description}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <p style={{color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem'}}>
+                      No calculation logs found. Click Refresh Logs or trigger an Engine Tick.
+                    </p>
                   )}
                 </div>
               </div>

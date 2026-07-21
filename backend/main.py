@@ -29,6 +29,27 @@ def run_optimization():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from apscheduler.schedulers.background import BackgroundScheduler
+    
+    # Initialize default portfolios
+    db = SessionLocal()
+    try:
+        algos = {
+            "V4.0 Aggressive": "A momentum and volatility-based algorithm that aggressively enters top-performing assets during macro bull regimes, and liquidates entirely to USDT during bear regimes.",
+            "V5.1 God Mode": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns."
+        }
+        for name, desc in algos.items():
+            port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()
+            if not port:
+                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, description=desc)
+                db.add(port)
+            elif port.description != desc:
+                port.description = desc
+        db.commit()
+    except Exception as e:
+        print(f"Error initializing portfolios: {e}")
+    finally:
+        db.close()
+
     scheduler = BackgroundScheduler()
     # Run every 4 hours
     scheduler.add_job(run_tick, 'interval', hours=4)
@@ -105,6 +126,15 @@ def get_prices():
     from algorithms import data_fetcher
     prices = data_fetcher.get_live_prices(10)
     return {"status": "success", "data": prices}
+
+@app.get("/api/ping")
+def ping():
+    return {"status": "alive", "message": "Pong! Server is awake."}
+
+@app.get("/engine_logs/{portfolio_id}", response_model=List[schemas.EngineLogResponse])
+def get_engine_logs(portfolio_id: int, db: Session = Depends(get_db)):
+    logs = db.query(database.EngineLog).filter(database.EngineLog.portfolio_id == portfolio_id).order_by(database.EngineLog.timestamp.desc()).limit(20).all()
+    return logs
 
 # Entry point for running the server
 if __name__ == "__main__":

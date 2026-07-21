@@ -42,6 +42,7 @@ class PositionResponse(BaseModel):
 
 class PortfolioBase(BaseModel):
     algorithm_name: str
+    description: Optional[str] = None
     balance_usd: float
 
 class PortfolioResponse(PortfolioBase):
@@ -50,6 +51,15 @@ class PortfolioResponse(PortfolioBase):
     updated_at: datetime
     positions: List[PositionResponse] = []
     trades: List[TradeResponse] = []
+    
+    class Config:
+        from_attributes = True
+
+class EngineLogResponse(BaseModel):
+    id: int
+    portfolio_id: int
+    timestamp: datetime
+    logs_json: str
     
     class Config:
         from_attributes = True

@@ -7,19 +7,23 @@ def get_target_allocations(data_dict, current_holdings=None):
     Returns a dictionary of target allocations, e.g., {'BTCUSDT': 0.7, 'ETHUSDT': 0.3}
     """
     if 'BTCUSDT' not in data_dict:
-        return {}
+        return {}, [{"step": "Pre-check", "value": "Skipped", "description": "BTCUSDT not in data_dict"}]
         
     btc_df = data_dict['BTCUSDT'].copy()
+    details = []
     
     # 1. Macro Filter
     if len(btc_df) < 200:
-        return {} # Not enough data
+        return {}, [{"step": "Macro Filter", "value": "Skipped", "description": "Not enough data for 200 SMA"}]
         
     btc_df['btc_sma_200'] = btc_df['close'].rolling(window=200).mean()
     current_regime = 'BULL' if btc_df['close'].iloc[-1] > btc_df['btc_sma_200'].iloc[-1] else 'BEAR'
     
+    details.append({"step": "Macro Filter", "value": current_regime, "description": f"BTC Price vs 200 SMA ({btc_df['close'].iloc[-1]:.2f} vs {btc_df['btc_sma_200'].iloc[-1]:.2f})"})
+    
     if current_regime == 'BEAR':
-        return {} # 0% allocation (liquidate to USDT)
+        details.append({"step": "Action", "value": "Liquidate", "description": "Bear regime detected, allocating 0%"})
+        return {}, details
         
     # 2. Scoring
     scores = {}
@@ -39,7 +43,8 @@ def get_target_allocations(data_dict, current_holdings=None):
             scores[sym] = score
             
     if not scores:
-        return {}
+        details.append({"step": "Scoring", "value": "None", "description": "No assets passed positive momentum & volume threshold"})
+        return {}, details
         
     # Sort top 2
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -58,5 +63,6 @@ def get_target_allocations(data_dict, current_holdings=None):
             vol_penalty = 0.5
             
         targets[sym] = weights[i] * vol_penalty
+        details.append({"step": f"Target {sym}", "value": f"{targets[sym]*100:.1f}%", "description": f"Score: {score:.4f}, Volatility Penalty: {vol_penalty}"})
         
-    return targets
+    return targets, details
