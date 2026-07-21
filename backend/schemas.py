@@ -21,6 +21,7 @@ class TradeBase(BaseModel):
     amount: float
     price: float
     profit_pct: Optional[float] = None
+    reason: Optional[str] = None
 
 class TradeResponse(TradeBase):
     id: int

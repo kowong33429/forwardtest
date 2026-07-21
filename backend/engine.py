@@ -71,13 +71,13 @@ def tick_engine():
             
             # 4. Get target allocations
             logger.info(f"Step 3: Calculating target allocations for {algo_name}...")
-            targets, details = algo_func(market_data, current_holdings=current_holdings)
+            targets, symbol_reasons = algo_func(market_data, current_holdings=current_holdings, total_value=total_value)
             logger.info(f"  Target Allocations: {targets}")
             
             # Save Engine Log for calculation process
             engine_log = EngineLog(
                 portfolio_id=portfolio.id,
-                logs_json=json.dumps(details)
+                logs_json=json.dumps(symbol_reasons)
             )
             db.add(engine_log)
             db.commit()
@@ -107,7 +107,8 @@ def tick_engine():
                         action="SELL",
                         amount=pos.amount,
                         price=current_price,
-                        profit_pct=profit_pct
+                        profit_pct=profit_pct,
+                        reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None
                     )
                     db.add(trade)
                     db.commit()
@@ -150,7 +151,8 @@ def tick_engine():
                             symbol=sym,
                             action="BUY",
                             amount=buy_amount,
-                            price=current_price
+                            price=current_price,
+                            reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None
                         )
                         db.add(trade)
                         

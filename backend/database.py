@@ -55,6 +55,7 @@ class Trade(Base):
     price = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
     profit_pct = Column(Float, nullable=True) # Only for SELL
+    reason = Column(String, nullable=True) # JSON string with deep technical details
     
     portfolio = relationship("Portfolio", back_populates="trades")
     insight = relationship("AIInsight", back_populates="trade", uselist=False)

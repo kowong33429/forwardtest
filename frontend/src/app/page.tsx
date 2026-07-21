@@ -56,25 +56,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<"live" | "demo">("live");
-  const [engineLogs, setEngineLogs] = useState<Record<number, any[]>>({});
-  const [logsLoading, setLogsLoading] = useState<Record<number, boolean>>({});
-
-  const fetchEngineLogs = async (portfolioId: number) => {
-    if (viewMode === "demo") {
-      alert("Logs are not available in demo mode.");
-      return;
-    }
-    setLogsLoading(prev => ({...prev, [portfolioId]: true}));
-    try {
-      const res = await fetch(`${API_URL}/engine_logs/${portfolioId}`);
-      const data = await res.json();
-      setEngineLogs(prev => ({...prev, [portfolioId]: data}));
-    } catch (e) {
-      console.error("Error fetching logs:", e);
-    } finally {
-      setLogsLoading(prev => ({...prev, [portfolioId]: false}));
-    }
-  };
 
   const fetchPortfolios = async () => {
     try {
@@ -311,47 +292,42 @@ export default function Home() {
                             <p><strong>Lesson:</strong> {trade.insight.lessons_learned}</p>
                           </div>
                         )}
+                        
+                        {trade.reason && (
+                          <div style={{marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)'}}>
+                            <h4 style={{margin: '0 0 0.5rem 0', color: 'var(--accent)', fontSize: '0.9rem'}}>🎯 Decision Logic</h4>
+                            {(() => {
+                              try {
+                                const reasonData = JSON.parse(trade.reason);
+                                return (
+                                  <>
+                                    <p style={{fontSize: '0.9rem', marginBottom: '0.8rem', lineHeight: '1.4'}}>{reasonData.decision_logic}</p>
+                                    
+                                    {reasonData.formula && (
+                                      <div style={{background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '5px', marginBottom: '0.8rem', fontFamily: 'monospace', fontSize: '0.85rem'}}>
+                                        <div style={{color: '#a78bfa', marginBottom: '0.3rem'}}><strong style={{color: '#fff'}}>Formula:</strong> {reasonData.formula}</div>
+                                        <div style={{color: 'var(--success)'}}><strong style={{color: '#fff'}}>Calculation:</strong> {reasonData.calculation}</div>
+                                      </div>
+                                    )}
+                                    
+                                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)'}}>
+                                      {reasonData.price && <div><strong>Entry Price:</strong> ${reasonData.price.toFixed(4)}</div>}
+                                      {reasonData.sma_200 && <div><strong>BTC 200 SMA:</strong> ${reasonData.sma_200.toFixed(2)}</div>}
+                                      {reasonData.stop_loss_price && <div style={{color: 'var(--danger)'}}><strong>Stop Loss:</strong> ${reasonData.stop_loss_price.toFixed(4)}</div>}
+                                      {reasonData.est_loss_usd && <div style={{color: 'var(--danger)'}}><strong>Max Risk:</strong> -${reasonData.est_loss_usd.toFixed(2)}</div>}
+                                    </div>
+                                  </>
+                                );
+                              } catch (e) {
+                                return <p style={{fontSize: '0.85rem'}}>{trade.reason}</p>;
+                              }
+                            })()}
+                          </div>
+                        )}
                       </div>
                     ))
                   ) : (
                     <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>No trades yet.</p>
-                  )}
-                </div>
-
-                {/* Calculation Details Section */}
-                <h3 style={{marginTop: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                  Calculation Details
-                  <button 
-                    onClick={() => fetchEngineLogs(port.id)}
-                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '0.2rem 0.5rem', borderRadius: '5px', cursor: 'pointer', fontSize: '0.8rem' }}
-                    disabled={logsLoading[port.id]}
-                  >
-                    {logsLoading[port.id] ? 'Loading...' : 'Refresh Logs'}
-                  </button>
-                </h3>
-                
-                <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '0.5rem', marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '10px'}}>
-                  {engineLogs[port.id] && engineLogs[port.id].length > 0 ? (
-                    engineLogs[port.id].map((log: any) => {
-                      const details = JSON.parse(log.logs_json || "[]");
-                      return (
-                        <div key={log.id} style={{marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
-                          <div style={{color: 'var(--accent)', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 'bold'}}>
-                            Tick: {new Date(log.timestamp).toLocaleString()}
-                          </div>
-                          {details.map((d: any, idx: number) => (
-                            <div key={idx} style={{ fontSize: '0.9rem', marginBottom: '0.3rem', marginLeft: '0.5rem', borderLeft: '2px solid rgba(255,255,255,0.2)', paddingLeft: '0.8rem' }}>
-                              <strong style={{color: '#fff'}}>{d.step}:</strong> <span style={{color: 'var(--success)'}}>{d.value}</span>
-                              <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>{d.description}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <p style={{color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.9rem'}}>
-                      No calculation logs found. Click Refresh Logs or trigger an Engine Tick.
-                    </p>
                   )}
                 </div>
               </div>
