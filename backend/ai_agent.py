@@ -29,7 +29,7 @@ def fetch_crypto_news():
 
 def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
     """
-    Uses Gemini API to generate an insight like a Top Data Scientist.
+    AI 1.1 Uses Gemini API to generate an insight like a Top Data Scientist.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:

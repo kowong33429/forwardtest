@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const DEMO_PORTFOLIOS = [
   {
@@ -56,6 +56,22 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<"live" | "demo">("live");
+  
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [showThaiTime, setShowThaiTime] = useState(false);
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const formatTime = (isoString: string) => {
+    const d = new Date(isoString);
+    if (showThaiTime) {
+      return d.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }) + ' (ICT)';
+    } else {
+      return d.toLocaleString('en-US', { timeZone: 'America/New_York' }) + ' (EST)';
+    }
+  };
 
   const fetchPortfolios = async () => {
     try {
@@ -226,11 +242,12 @@ export default function Home() {
                     {port.description}
                   </p>
                 )}
-                <div className="balance" style={{ fontSize: '2.5rem' }}>
-                  ${calculateTotalValue(port).toFixed(2)}
-                </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                   Total Value
+                </div>
+                <div className="balance" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
+                  ${calculateTotalValue(port).toFixed(2)}
                 </div>
                 <div style={{ color: 'var(--success)', fontWeight: 'bold', fontSize: '1.1rem' }}>
                   Cash Balance: ${port.balance_usd.toFixed(2)}
@@ -238,22 +255,38 @@ export default function Home() {
                 
                 <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem'}}>Current Positions</h3>
                 {port.positions && port.positions.length > 0 ? (
-                  <table>
+                  <table className="exchange-table">
                     <thead>
                       <tr>
-                        <th>Coin</th>
-                        <th>Amount</th>
+                        <th>Symbol</th>
                         <th>Avg Price</th>
+                        <th>Initial Cost</th>
+                        <th>Current Value</th>
+                        <th>PnL</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {groupPositions(port.positions).map((pos: any) => (
-                        <tr key={pos.symbol}>
-                          <td style={{fontWeight: '600'}}>{pos.symbol}</td>
-                          <td>{pos.amount.toFixed(4)}</td>
-                          <td>${pos.avg_entry_price.toFixed(4)}</td>
-                        </tr>
-                      ))}
+                      {groupPositions(port.positions).map((pos: any) => {
+                        const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
+                        const initialCost = pos.amount * pos.avg_entry_price;
+                        const currentValue = pos.amount * livePrice;
+                        const pnlUsd = currentValue - initialCost;
+                        const pnlPct = (pnlUsd / initialCost) * 100;
+                        const pnlColor = pnlUsd >= 0 ? 'var(--success)' : 'var(--danger)';
+                        const pnlSign = pnlUsd >= 0 ? '+' : '';
+
+                        return (
+                          <tr key={pos.symbol}>
+                            <td style={{fontWeight: '600'}}>{pos.symbol}</td>
+                            <td>${pos.avg_entry_price.toFixed(4)}</td>
+                            <td>${initialCost.toFixed(2)} USDT</td>
+                            <td>${currentValue.toFixed(2)} USDT</td>
+                            <td style={{color: pnlColor, fontWeight: 'bold'}}>
+                              {pnlSign}{pnlUsd.toFixed(2)} USDT ({pnlSign}{pnlPct.toFixed(2)}%)
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (
@@ -261,71 +294,86 @@ export default function Home() {
                 )}
 
                 <h3 style={{marginTop: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px'}}>
-                  Recent Trades & AI Insights
+                  History & AI Insights
                 </h3>
-                <div style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem', marginTop: '1rem'}}>
+                <div style={{maxHeight: '500px', overflowY: 'auto', paddingRight: '0.5rem', marginTop: '1rem'}}>
                   {port.trades && port.trades.length > 0 ? (
-                    port.trades.map((trade: any) => (
-                      <div key={trade.id} style={{marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)'}}>
-                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', alignItems: 'center'}}>
-                          <span style={{ fontWeight: 'bold', color: trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)' }}>
-                            {trade.action === 'BUY' ? 'Bought' : 'Sold'} {trade.amount.toFixed(4)} {trade.symbol}
-                          </span>
-                          <span style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>
-                            {new Date(trade.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-                        <div style={{fontSize: '0.95rem', color: 'var(--text-muted)'}}>
-                          Price: ${trade.price.toFixed(4)} / Total: ${(trade.amount * trade.price).toFixed(2)} USDT
-                          {trade.profit_pct !== null && (
-                            <span style={{marginLeft: '1rem', fontWeight: 'bold', color: trade.profit_pct >= 0 ? 'var(--success)' : 'var(--danger)'}}>
-                              Profit: {trade.profit_pct > 0 ? '+' : ''}{trade.profit_pct.toFixed(2)}%
-                            </span>
-                          )}
-                        </div>
-                        
-                        {trade.insight && (
-                          <div className="ai-insight">
-                            <h4>🧠 Gemini Analysis</h4>
-                            <p><strong>Summary:</strong> {trade.insight.summary}</p>
-                            <p><strong>Macro:</strong> {trade.insight.macro_context}</p>
-                            <p><strong>Lesson:</strong> {trade.insight.lessons_learned}</p>
-                          </div>
-                        )}
-                        
-                        {trade.reason && (
-                          <div style={{marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)'}}>
-                            <h4 style={{margin: '0 0 0.5rem 0', color: 'var(--accent)', fontSize: '0.9rem'}}>🎯 Decision Logic</h4>
-                            {(() => {
-                              try {
-                                const reasonData = JSON.parse(trade.reason);
-                                return (
-                                  <>
-                                    <p style={{fontSize: '0.9rem', marginBottom: '0.8rem', lineHeight: '1.4'}}>{reasonData.decision_logic}</p>
+                    <table className="exchange-table expandable-table">
+                      <thead>
+                        <tr>
+                          <th>Action</th>
+                          <th>Price</th>
+                          <th>Amount</th>
+                          <th>Total (USDT)</th>
+                          <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
+                            Datetime ⏱️
+                          </th>
+                          <th>Stop Loss</th>
+                          <th>Max Risk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {port.trades.map((trade: any) => {
+                          const isExpanded = !!expandedRows[`${port.id}-${trade.id}`];
+                          const reasonData = trade.reason ? (() => { try { return JSON.parse(trade.reason); } catch(e) { return null; } })() : null;
+                          const totalUsdt = trade.amount * trade.price;
+                          const actionColor = trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)';
+
+                          return (
+                            <React.Fragment key={`${port.id}-${trade.id}`}>
+                              <tr onClick={() => toggleRow(`${port.id}-${trade.id}`)} className="clickable-row">
+                                <td style={{color: actionColor, fontWeight: 'bold'}}>{trade.action}</td>
+                                <td>${trade.price.toFixed(4)}</td>
+                                <td>{trade.amount.toFixed(4)} {trade.symbol}</td>
+                                <td>${totalUsdt.toFixed(2)}</td>
+                                <td>{formatTime(trade.timestamp)}</td>
+                                <td>{reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}` : '-'}</td>
+                                <td style={{color: 'var(--danger)'}}>{reasonData?.est_loss_usd ? `-$${reasonData.est_loss_usd.toFixed(2)}` : '-'}</td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="expanded-row">
+                                  <td colSpan={7} style={{padding: '1.5rem', background: 'rgba(0,0,0,0.2)'}}>
                                     
-                                    {reasonData.formula && (
-                                      <div style={{background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '5px', marginBottom: '0.8rem', fontFamily: 'monospace', fontSize: '0.85rem'}}>
-                                        <div style={{color: '#a78bfa', marginBottom: '0.3rem'}}><strong style={{color: '#fff'}}>Formula:</strong> {reasonData.formula}</div>
-                                        <div style={{color: 'var(--success)'}}><strong style={{color: '#fff'}}>Calculation:</strong> {reasonData.calculation}</div>
+                                    {/* AI Insights Section */}
+                                    {trade.insight && (
+                                      <div className="ai-insight" style={{marginBottom: '1.5rem'}}>
+                                        <h4 style={{marginTop: 0}}>🧠 Gemini Analysis</h4>
+                                        <p><strong>Summary:</strong> {trade.insight.summary}</p>
+                                        <p><strong>Macro:</strong> {trade.insight.macro_context}</p>
+                                        <p><strong>Lesson:</strong> {trade.insight.lessons_learned}</p>
                                       </div>
                                     )}
-                                    
-                                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)'}}>
-                                      {reasonData.price && <div><strong>Entry Price:</strong> ${reasonData.price.toFixed(4)}</div>}
-                                      {reasonData.sma_200 && <div><strong>BTC 200 SMA:</strong> ${reasonData.sma_200.toFixed(2)}</div>}
-                                      {reasonData.stop_loss_price && <div style={{color: 'var(--danger)'}}><strong>Stop Loss:</strong> ${reasonData.stop_loss_price.toFixed(4)}</div>}
-                                      {reasonData.est_loss_usd && <div style={{color: 'var(--danger)'}}><strong>Max Risk:</strong> -${reasonData.est_loss_usd.toFixed(2)}</div>}
-                                    </div>
-                                  </>
-                                );
-                              } catch (e) {
-                                return <p style={{fontSize: '0.85rem'}}>{trade.reason}</p>;
-                              }
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    ))
+
+                                    {/* Deep Decision Logic */}
+                                    {reasonData ? (
+                                      <div style={{background: 'rgba(0,0,0,0.3)', padding: '1.5rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)'}}>
+                                        <h4 style={{margin: '0 0 1rem 0', color: 'var(--accent)', fontSize: '1rem'}}>🎯 Detailed Decision Logic</h4>
+                                        
+                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
+                                          {Object.entries(reasonData).map(([key, value]: [string, any]) => {
+                                            // Skip fields we already showed in the top-level table if we want, but user requested "show every value"
+                                            if (typeof value === 'object') return null; // skip nested
+                                            return (
+                                              <div key={key} style={{fontSize: '0.9rem'}}>
+                                                <strong style={{color: '#a78bfa', textTransform: 'capitalize'}}>{key.replace(/_/g, ' ')}:</strong> 
+                                                <span style={{marginLeft: '0.5rem', color: '#fff'}}>{value}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div style={{color: 'var(--text-muted)'}}>No deep decision logic available.</div>
+                                    )}
+
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   ) : (
                     <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>No trades yet.</p>
                   )}

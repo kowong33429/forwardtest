@@ -230,3 +230,43 @@ th {
   color: #93c5fd;
   font-weight: 600;
 }
+
+/* Exchange Table Styles */
+.exchange-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}
+
+.exchange-table th {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.exchange-table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  vertical-align: middle;
+}
+
+.exchange-table.expandable-table tbody tr.clickable-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.exchange-table.expandable-table tbody tr.clickable-row:hover {
+  background-color: rgba(255,255,255,0.03);
+}
+
+.exchange-table tbody tr.expanded-row td {
+  padding: 0;
+  border-bottom: 2px solid var(--border);
+}
+
