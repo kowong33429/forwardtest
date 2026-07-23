@@ -65,11 +65,11 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     """
     
     try:
-        logger.info(f"Calling Gemini API (model: gemini-3.1-pro) for trade insight. Symbol: {symbol}, Action: {action}")
+        logger.info(f"Calling Gemini API (model: gemini-3.1-pro-preview) for trade insight. Symbol: {symbol}, Action: {action}")
         logger.info(f"Prompt snippet: {prompt[:100]}...")
         
         response = client.models.generate_content(
-            model='gemini-3.1-pro',
+            model='gemini-3.1-pro-preview',
             contents=prompt,
         )
         
@@ -167,7 +167,7 @@ def run_daily_optimizer(db, portfolio_id: int):
     
     try:
         response = client.models.generate_content(
-            model='gemini-3.1-pro',
+            model='gemini-1.5-pro',
             contents=prompt,
         )
         text = response.text
