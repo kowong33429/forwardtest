@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 const DEMO_PORTFOLIOS = [
   {
@@ -292,91 +293,12 @@ export default function Home() {
                 ) : (
                   <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>Holding 100% USDT (No active positions)</p>
                 )}
-
-                <h3 style={{marginTop: '2rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px'}}>
-                  History & AI Insights
-                </h3>
-                <div style={{maxHeight: '500px', overflowY: 'auto', paddingRight: '0.5rem', marginTop: '1rem'}}>
-                  {port.trades && port.trades.length > 0 ? (
-                    <table className="exchange-table expandable-table">
-                      <thead>
-                        <tr>
-                          <th>Action</th>
-                          <th>Price</th>
-                          <th>Amount</th>
-                          <th>Total (USDT)</th>
-                          <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
-                            Datetime ⏱️
-                          </th>
-                          <th>Stop Loss</th>
-                          <th>Max Risk</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {port.trades.map((trade: any) => {
-                          const isExpanded = !!expandedRows[`${port.id}-${trade.id}`];
-                          const reasonData = trade.reason ? (() => { try { return JSON.parse(trade.reason); } catch(e) { return null; } })() : null;
-                          const totalUsdt = trade.amount * trade.price;
-                          const actionColor = trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)';
-
-                          return (
-                            <React.Fragment key={`${port.id}-${trade.id}`}>
-                              <tr onClick={() => toggleRow(`${port.id}-${trade.id}`)} className="clickable-row">
-                                <td style={{color: actionColor, fontWeight: 'bold'}}>{trade.action}</td>
-                                <td>${trade.price.toFixed(4)}</td>
-                                <td>{trade.amount.toFixed(4)} {trade.symbol}</td>
-                                <td>${totalUsdt.toFixed(2)}</td>
-                                <td>{formatTime(trade.timestamp)}</td>
-                                <td>{reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}` : '-'}</td>
-                                <td style={{color: 'var(--danger)'}}>{reasonData?.est_loss_usd ? `-$${reasonData.est_loss_usd.toFixed(2)}` : '-'}</td>
-                              </tr>
-                              {isExpanded && (
-                                <tr className="expanded-row">
-                                  <td colSpan={7} style={{padding: '1.5rem', background: 'rgba(0,0,0,0.2)'}}>
-                                    
-                                    {/* AI Insights Section */}
-                                    {trade.insight && (
-                                      <div className="ai-insight" style={{marginBottom: '1.5rem'}}>
-                                        <h4 style={{marginTop: 0}}>🧠 Gemini Analysis</h4>
-                                        <p><strong>Summary:</strong> {trade.insight.summary}</p>
-                                        <p><strong>Macro:</strong> {trade.insight.macro_context}</p>
-                                        <p><strong>Lesson:</strong> {trade.insight.lessons_learned}</p>
-                                      </div>
-                                    )}
-
-                                    {/* Deep Decision Logic */}
-                                    {reasonData ? (
-                                      <div style={{background: 'rgba(0,0,0,0.3)', padding: '1.5rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)'}}>
-                                        <h4 style={{margin: '0 0 1rem 0', color: 'var(--accent)', fontSize: '1rem'}}>🎯 Detailed Decision Logic</h4>
-                                        
-                                        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
-                                          {Object.entries(reasonData).map(([key, value]: [string, any]) => {
-                                            // Skip fields we already showed in the top-level table if we want, but user requested "show every value"
-                                            if (typeof value === 'object') return null; // skip nested
-                                            return (
-                                              <div key={key} style={{fontSize: '0.9rem'}}>
-                                                <strong style={{color: '#a78bfa', textTransform: 'capitalize'}}>{key.replace(/_/g, ' ')}:</strong> 
-                                                <span style={{marginLeft: '0.5rem', color: '#fff'}}>{value}</span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div style={{color: 'var(--text-muted)'}}>No deep decision logic available.</div>
-                                    )}
-
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>No trades yet.</p>
-                  )}
+                <div style={{marginTop: '2rem', textAlign: 'center'}}>
+                  <Link href={`/history/${port.id}`} passHref>
+                    <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '1rem'}}>
+                      View Full Trading History & AI Insights ➔
+                    </button>
+                  </Link>
                 </div>
               </div>
             ))
