@@ -91,9 +91,10 @@ export default function HistoryPage() {
               <tr>
                 <th>Symbol</th>
                 <th>Action</th>
-                <th>Price</th>
+                <th>Exec. Price</th>
                 <th>Amount</th>
                 <th>Total (USDT)</th>
+                <th>Realized PnL</th>
                 <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
                   Datetime ⏱️
                 </th>
@@ -114,6 +115,20 @@ export default function HistoryPage() {
                 const totalUsdt = trade.amount * trade.price;
                 const actionColor = trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)';
 
+                let pnlDisplay = <span style={{color: 'var(--text-muted)'}}>-</span>;
+                if (trade.action === 'SELL' && trade.profit_pct !== null && trade.profit_pct !== undefined) {
+                  const buy_price = trade.price / (1 + trade.profit_pct / 100);
+                  const buy_total = trade.amount * buy_price;
+                  const profit_usd = totalUsdt - buy_total;
+                  const pnlColor = profit_usd >= 0 ? 'var(--success)' : 'var(--danger)';
+                  const sign = profit_usd >= 0 ? '+' : '';
+                  pnlDisplay = (
+                    <span style={{color: pnlColor, fontWeight: 'bold'}}>
+                      {sign}${profit_usd.toFixed(2)} ({sign}{trade.profit_pct.toFixed(2)}%)
+                    </span>
+                  );
+                }
+
                 return (
                   <React.Fragment key={trade.id}>
                     <tr onClick={() => toggleRow(`${trade.id}`)} className="clickable-row">
@@ -122,6 +137,7 @@ export default function HistoryPage() {
                       <td>${trade.price.toFixed(4)}</td>
                       <td>{trade.amount.toFixed(4)}</td>
                       <td>${totalUsdt.toFixed(2)}</td>
+                      <td>{pnlDisplay}</td>
                       <td>{formatTime(trade.timestamp)}</td>
                       <td style={{color: 'var(--danger)', fontWeight: 'bold'}}>
                         {reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}(-$${(reasonData.est_loss_usd || 0).toFixed(2)})` : '-'}
@@ -129,7 +145,7 @@ export default function HistoryPage() {
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
-                        <td colSpan={7} style={{padding: '1.5rem', background: 'rgba(0,0,0,0.2)'}}>
+                        <td colSpan={8} style={{padding: '1.5rem', background: 'rgba(0,0,0,0.2)'}}>
                           
                           {/* AI Insights Section */}
                           {trade.insight && (
