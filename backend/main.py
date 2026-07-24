@@ -136,6 +136,11 @@ def get_engine_logs(portfolio_id: int, db: Session = Depends(get_db)):
     logs = db.query(database.EngineLog).filter(database.EngineLog.portfolio_id == portfolio_id).order_by(database.EngineLog.timestamp.desc()).limit(20).all()
     return logs
 
+@app.get("/optimization/{portfolio_id}", response_model=List[schemas.DailyOptimizationResultResponse])
+def get_optimization_results(portfolio_id: int, db: Session = Depends(get_db)):
+    results = db.query(database.DailyOptimizationResult).filter(database.DailyOptimizationResult.portfolio_id == portfolio_id).order_by(database.DailyOptimizationResult.timestamp.desc()).limit(10).all()
+    return results
+
 # Entry point for running the server
 if __name__ == "__main__":
     import uvicorn

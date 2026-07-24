@@ -108,26 +108,49 @@ export default function HistoryPage() {
                           
                           {/* AI Insights Section */}
                           {trade.insight && (
-                            <div className="ai-insight" style={{marginBottom: '1.5rem'}}>
-                              <h4 style={{marginTop: 0}}>🧠 Gemini Analysis</h4>
-                              <p><strong>Summary:</strong> {trade.insight.summary}</p>
-                              <p><strong>Macro:</strong> {trade.insight.macro_context}</p>
-                              <p><strong>Lesson:</strong> {trade.insight.lessons_learned}</p>
+                            <div className="mb-6 p-4 sm:p-5 rounded-xl bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 backdrop-blur-md">
+                              <div className="flex items-center gap-2 mb-4 border-b border-indigo-500/20 pb-3">
+                                <span className="text-2xl">✨</span>
+                                <h4 className="m-0 text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Gemini AI Analysis</h4>
+                              </div>
+                              
+                              <div className="space-y-4">
+                                <div className="bg-black/20 rounded-lg p-4 border border-white/5">
+                                  <div className="flex items-center gap-2 text-indigo-300 font-semibold mb-2">
+                                    <span>📊</span> <span>Trade Summary</span>
+                                  </div>
+                                  <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap m-0">{trade.insight.summary}</p>
+                                </div>
+
+                                <div className="bg-black/20 rounded-lg p-4 border border-white/5">
+                                  <div className="flex items-center gap-2 text-purple-300 font-semibold mb-2">
+                                    <span>🌍</span> <span>Macro Context</span>
+                                  </div>
+                                  <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap m-0">{trade.insight.macro_context}</p>
+                                </div>
+
+                                <div className="bg-black/20 rounded-lg p-4 border border-white/5">
+                                  <div className="flex items-center gap-2 text-pink-300 font-semibold mb-2">
+                                    <span>💡</span> <span>Lessons Learned</span>
+                                  </div>
+                                  <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap m-0">{trade.insight.lessons_learned}</p>
+                                </div>
+                              </div>
                             </div>
                           )}
 
                           {/* Deep Decision Logic */}
                           {reasonData ? (
-                            <div style={{background: 'rgba(0,0,0,0.3)', padding: '1.5rem', borderRadius: '8px', borderLeft: '3px solid var(--accent)'}}>
-                              <h4 style={{margin: '0 0 1rem 0', color: 'var(--accent)', fontSize: '1rem'}}>🎯 Detailed Decision Logic</h4>
+                            <div className="bg-black/30 p-4 sm:p-6 rounded-lg border-l-4 border-[var(--accent)]">
+                              <h4 className="m-0 mb-4 text-[var(--accent)] text-base font-bold">🎯 Detailed Decision Logic</h4>
                               
-                              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {Object.entries(reasonData).map(([key, value]: [string, any]) => {
                                   if (typeof value === 'object') return null; // skip nested arrays/objects
                                   return (
-                                    <div key={key} style={{fontSize: '0.9rem'}}>
-                                      <strong style={{color: '#a78bfa', textTransform: 'capitalize'}}>{key.replace(/_/g, ' ')}:</strong> 
-                                      <span style={{marginLeft: '0.5rem', color: '#fff'}}>{value as React.ReactNode}</span>
+                                    <div key={key} className="text-sm">
+                                      <strong className="text-purple-300 capitalize">{key.replace(/_/g, ' ')}:</strong> 
+                                      <span className="ml-2 text-white">{value as React.ReactNode}</span>
                                     </div>
                                   );
                                 })}

@@ -78,5 +78,14 @@ class EngineLog(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     logs_json = Column(String) # JSON string of calculation details
 
+class DailyOptimizationResult(Base):
+    __tablename__ = "daily_optimization_results"
+    id = Column(Integer, primary_key=True, index=True)
+    portfolio_id = Column(Integer, ForeignKey("portfolios.id"))
+    needs_tuning = Column(Integer, default=0) # SQLite boolean equivalent (0/1)
+    analysis = Column(String)
+    suggested_changes = Column(String)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
 # Create tables
 Base.metadata.create_all(bind=engine)

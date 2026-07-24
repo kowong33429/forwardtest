@@ -228,7 +228,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="dashboard-grid">
+        <div className="dashboard-grid grid grid-cols-1 xl:grid-cols-2 gap-8">
           {displayPortfolios.length === 0 ? (
             <div style={{gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-muted)'}}>
               <h3>No portfolios found.</h3>
@@ -256,47 +256,54 @@ export default function Home() {
                 
                 <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem'}}>Current Positions</h3>
                 {port.positions && port.positions.length > 0 ? (
-                  <table className="exchange-table">
-                    <thead>
-                      <tr>
-                        <th>Symbol</th>
-                        <th>Avg Price</th>
-                        <th>Initial Cost</th>
-                        <th>Current Value</th>
-                        <th>PnL</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groupPositions(port.positions).map((pos: any) => {
-                        const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
-                        const initialCost = pos.amount * pos.avg_entry_price;
-                        const currentValue = pos.amount * livePrice;
-                        const pnlUsd = currentValue - initialCost;
-                        const pnlPct = (pnlUsd / initialCost) * 100;
-                        const pnlColor = pnlUsd >= 0 ? 'var(--success)' : 'var(--danger)';
-                        const pnlSign = pnlUsd >= 0 ? '+' : '';
+                  <div className="overflow-x-auto">
+                    <table className="exchange-table min-w-full">
+                      <thead>
+                        <tr>
+                          <th>Symbol</th>
+                          <th>Avg Price</th>
+                          <th>Initial Cost</th>
+                          <th>Current Value</th>
+                          <th>PnL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupPositions(port.positions).map((pos: any) => {
+                          const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
+                          const initialCost = pos.amount * pos.avg_entry_price;
+                          const currentValue = pos.amount * livePrice;
+                          const pnlUsd = currentValue - initialCost;
+                          const pnlPct = (pnlUsd / initialCost) * 100;
+                          const pnlColor = pnlUsd >= 0 ? 'var(--success)' : 'var(--danger)';
+                          const pnlSign = pnlUsd >= 0 ? '+' : '';
 
-                        return (
-                          <tr key={pos.symbol}>
-                            <td style={{fontWeight: '600'}}>{pos.symbol}</td>
-                            <td>${pos.avg_entry_price.toFixed(4)}</td>
-                            <td>${initialCost.toFixed(2)} USDT</td>
-                            <td>${currentValue.toFixed(2)} USDT</td>
-                            <td style={{color: pnlColor, fontWeight: 'bold'}}>
-                              {pnlSign}{pnlUsd.toFixed(2)} USDT ({pnlSign}{pnlPct.toFixed(2)}%)
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                          return (
+                            <tr key={pos.symbol}>
+                              <td style={{fontWeight: '600'}}>{pos.symbol}</td>
+                              <td>${pos.avg_entry_price.toFixed(4)}</td>
+                              <td>${initialCost.toFixed(2)} USDT</td>
+                              <td>${currentValue.toFixed(2)} USDT</td>
+                              <td style={{color: pnlColor, fontWeight: 'bold'}}>
+                                {pnlSign}{pnlUsd.toFixed(2)} USDT ({pnlSign}{pnlPct.toFixed(2)}%)
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 ) : (
                   <p style={{color: 'var(--text-muted)', fontStyle: 'italic'}}>Holding 100% USDT (No active positions)</p>
                 )}
-                <div style={{marginTop: '2rem', textAlign: 'center'}}>
+                <div style={{marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
                   <Link href={`/history/${port.id}`} passHref>
                     <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '1rem'}}>
                       View Full Trading History & AI Insights ➔
+                    </button>
+                  </Link>
+                  <Link href={`/ai-reports/${port.id}`} passHref>
+                    <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', padding: '1rem'}}>
+                      View AI Strategy Reports (Daily Optimizer) ➔
                     </button>
                   </Link>
                 </div>

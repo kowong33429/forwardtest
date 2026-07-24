@@ -27,6 +27,96 @@ def fetch_crypto_news():
         traceback.print_exc()
         return f"Error fetching news: {e}"
 
+def fetch_macro_context():
+    """
+    Fetches global market metrics from CoinMarketCap.
+    """
+    api_key = os.getenv("CMC_API_KEY")
+    if not api_key:
+        return "Macro data unavailable (Missing CMC_API_KEY)."
+    
+    url = "https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest"
+    headers = {
+        'Accepts': 'application/json',
+        'X-CMC_PRO_API_KEY': api_key,
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            data = response.json().get("data", {})
+            quote = data.get("quote", {}).get("USD", {})
+            
+            total_mcap = quote.get("total_market_cap", 0)
+            vol_24h = quote.get("total_volume_24h", 0)
+            btc_dom = data.get("btc_dominance", 0)
+            
+            return f"Total Market Cap: ${total_mcap:,.0f} | 24h Volume: ${vol_24h:,.0f} | BTC Dominance: {btc_dom:.2f}%"
+        else:
+            return f"Error fetching macro data: {response.status_code}"
+    except Exception as e:
+        logger.error(f"Error fetching macro context: {e}")
+        return f"Exception fetching macro data: {e}"
+
+def fetch_coin_fundamentals(symbol: str):
+    """
+    Fetches specific coin fundamental data from CoinMarketCap.
+    """
+    api_key = os.getenv("CMC_API_KEY")
+    if not api_key:
+        return "Fundamental data unavailable (Missing CMC_API_KEY)."
+        
+    url_quotes = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+    url_info = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/info"
+    
+    headers = {
+        'Accepts': 'application/json',
+        'X-CMC_PRO_API_KEY': api_key,
+    }
+    
+    clean_symbol = symbol.replace("USDT", "").replace("BUSD", "")
+    if not clean_symbol:
+        clean_symbol = symbol
+        
+    params = {'symbol': clean_symbol}
+    result = []
+    
+    try:
+        # Quotes (FDV, Supply)
+        res_q = requests.get(url_quotes, headers=headers, params=params, timeout=5)
+        if res_q.status_code == 200:
+            data = res_q.json().get("data", {}).get(clean_symbol, {})
+            if isinstance(data, list) and len(data) > 0:
+                data = data[0]
+            quote = data.get("quote", {}).get("USD", {})
+            
+            fdv = quote.get("fully_diluted_market_cap")
+            circ_supply = data.get("circulating_supply")
+            
+            if fdv is not None: result.append(f"FDV: ${fdv:,.0f}")
+            if circ_supply is not None: result.append(f"Circulating Supply: {circ_supply:,.0f}")
+            
+        # Info (Tags)
+        res_i = requests.get(url_info, headers=headers, params=params, timeout=5)
+        if res_i.status_code == 200:
+            data = res_i.json().get("data", {}).get(clean_symbol, [])
+            if isinstance(data, list) and len(data) > 0:
+                coin_info = data[0]
+            else:
+                coin_info = data
+                
+            tags = coin_info.get("tags", []) if isinstance(coin_info, dict) else []
+            if tags:
+                tag_names = [t if isinstance(t, str) else t.get("name", "") for t in tags[:5]]
+                tag_names = [t for t in tag_names if t]
+                if tag_names:
+                    result.append(f"Tags: {', '.join(tag_names)}")
+                    
+        return " | ".join(result) if result else "No fundamental data found."
+    except Exception as e:
+        logger.error(f"Error fetching fundamentals for {clean_symbol}: {e}")
+        return f"Exception fetching fundamentals: {e}"
+
 def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
     """
     AI 1.1 Uses Gemini API to generate an insight like a Top Data Scientist.
@@ -42,6 +132,8 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     client = genai.Client(api_key=api_key)
     
     news_context = fetch_crypto_news()
+    macro_context = fetch_macro_context()
+    fundamental_data = fetch_coin_fundamentals(symbol)
     
     prompt = f"""
     Act as a Senior Quantitative Analyst. 
@@ -54,6 +146,8 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     - Exit Price: ${exit_price:.4f}
     - Profit/Loss: {profit_pct:.2f}%
     
+    Global Macro Context: {macro_context}
+    Coin Fundamental Data: {fundamental_data}
     Recent Crypto News Context: {news_context}
     
     Conduct a deep-dive analysis on this trade. Provide your output in JSON format with exactly three keys:
@@ -66,7 +160,7 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     
     try:
         logger.info(f"Calling Gemini API (model: gemini-3.1-pro-preview) for trade insight. Symbol: {symbol}, Action: {action}")
-        logger.info(f"Prompt snippet: {prompt[:100]}...")
+        logger.info(f"========== FULL PROMPT ==========\n{prompt}\n=================================")
         
         response = client.models.generate_content(
             model='gemini-3.1-pro-preview',
@@ -118,7 +212,7 @@ def run_daily_optimizer(db, portfolio_id: int):
     """
     AI 1.2: Strategy Optimizer. Analyzes today's trades and insights.
     """
-    from database import Trade, AIInsight, Portfolio
+    from database import Trade, AIInsight, Portfolio, DailyOptimizationResult
     from datetime import datetime, timedelta
     
     # Get portfolio name
@@ -178,6 +272,17 @@ def run_daily_optimizer(db, portfolio_id: int):
             
         import json
         result = json.loads(text.strip())
+        
+        # Save to database
+        needs_tuning = 1 if result.get("needs_tuning", False) else 0
+        db_opt = DailyOptimizationResult(
+            portfolio_id=portfolio_id,
+            needs_tuning=needs_tuning,
+            analysis=result.get("analysis", ""),
+            suggested_changes=result.get("suggested_changes", "")
+        )
+        db.add(db_opt)
+        db.commit()
         
         # Trigger AI 1.3
         ai_1_3_executor(portfolio.algorithm_name, result)

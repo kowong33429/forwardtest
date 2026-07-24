@@ -64,3 +64,14 @@ class EngineLogResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class DailyOptimizationResultResponse(BaseModel):
+    id: int
+    portfolio_id: int
+    needs_tuning: bool
+    analysis: str
+    suggested_changes: str
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True
