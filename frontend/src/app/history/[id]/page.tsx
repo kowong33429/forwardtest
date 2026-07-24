@@ -12,6 +12,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [showThaiTime, setShowThaiTime] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -61,18 +62,33 @@ export default function HistoryPage() {
         </Link>
       </div>
 
-      <div className="card">
-        <h2 style={{borderBottom: 'none', paddingBottom: 0}}>
-          {portfolio.algorithm_name} - Trading History
-        </h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '2rem' }}>
-          Detailed record of all trades and Gemini AI logic analysis.
-        </p>
+      <div className="card relative">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <div>
+            <h2 style={{borderBottom: 'none', paddingBottom: 0, marginBottom: '0.5rem'}}>
+              {portfolio.algorithm_name} - Trading History
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
+              Detailed record of all trades and Gemini AI logic analysis.
+            </p>
+          </div>
+          <div className="relative w-full md:w-64">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">🔍</span>
+            <input 
+              type="text" 
+              placeholder="Search symbol or date..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-black/40 border border-slate-600 rounded-full py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all"
+            />
+          </div>
+        </div>
 
         {portfolio.trades && portfolio.trades.length > 0 ? (
           <table className="exchange-table expandable-table">
             <thead>
               <tr>
+                <th>Symbol</th>
                 <th>Action</th>
                 <th>Price</th>
                 <th>Amount</th>
@@ -80,12 +96,18 @@ export default function HistoryPage() {
                 <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
                   Datetime ⏱️
                 </th>
-                <th>Stop Loss</th>
-                <th>Max Risk</th>
+                <th>STOP LOSS</th>
               </tr>
             </thead>
             <tbody>
-              {portfolio.trades.map((trade: any) => {
+              {(portfolio.trades || [])
+                .filter((trade: any) => {
+                  const term = searchTerm.toLowerCase();
+                  const symbolMatch = trade.symbol?.toLowerCase().includes(term);
+                  const dateMatch = formatTime(trade.timestamp).toLowerCase().includes(term);
+                  return symbolMatch || dateMatch;
+                })
+                .map((trade: any) => {
                 const isExpanded = !!expandedRows[`${trade.id}`];
                 const reasonData = trade.reason ? (() => { try { return JSON.parse(trade.reason); } catch(e) { return null; } })() : null;
                 const totalUsdt = trade.amount * trade.price;
@@ -94,13 +116,15 @@ export default function HistoryPage() {
                 return (
                   <React.Fragment key={trade.id}>
                     <tr onClick={() => toggleRow(`${trade.id}`)} className="clickable-row">
+                      <td style={{fontWeight: 'bold'}}>{trade.symbol}</td>
                       <td style={{color: actionColor, fontWeight: 'bold'}}>{trade.action}</td>
                       <td>${trade.price.toFixed(4)}</td>
-                      <td>{trade.amount.toFixed(4)} {trade.symbol}</td>
+                      <td>{trade.amount.toFixed(4)}</td>
                       <td>${totalUsdt.toFixed(2)}</td>
                       <td>{formatTime(trade.timestamp)}</td>
-                      <td>{reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}` : '-'}</td>
-                      <td style={{color: 'var(--danger)'}}>{reasonData?.est_loss_usd ? `-$${reasonData.est_loss_usd.toFixed(2)}` : '-'}</td>
+                      <td style={{color: 'var(--danger)', fontWeight: 'bold'}}>
+                        {reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}(-$${(reasonData.est_loss_usd || 0).toFixed(2)})` : '-'}
+                      </td>
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
@@ -141,16 +165,18 @@ export default function HistoryPage() {
 
                           {/* Deep Decision Logic */}
                           {reasonData ? (
-                            <div className="bg-black/30 p-4 sm:p-6 rounded-lg border-l-4 border-[var(--accent)]">
-                              <h4 className="m-0 mb-4 text-[var(--accent)] text-base font-bold">🎯 Detailed Decision Logic</h4>
+                            <div className="bg-black/40 p-4 sm:p-6 rounded-xl border border-slate-700/50 shadow-lg mt-4">
+                              <h4 className="m-0 mb-4 text-slate-300 text-lg font-bold flex items-center gap-2">
+                                <span>🎯</span> Detailed Decision Logic
+                              </h4>
                               
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {Object.entries(reasonData).map(([key, value]: [string, any]) => {
                                   if (typeof value === 'object') return null; // skip nested arrays/objects
                                   return (
-                                    <div key={key} className="text-sm">
-                                      <strong className="text-purple-300 capitalize">{key.replace(/_/g, ' ')}:</strong> 
-                                      <span className="ml-2 text-white">{value as React.ReactNode}</span>
+                                    <div key={key} className="bg-white/5 rounded-lg p-3 border border-white/5">
+                                      <div className="text-slate-400 text-xs uppercase tracking-wider mb-1 font-semibold">{key.replace(/_/g, ' ')}</div> 
+                                      <div className="text-white font-medium break-words">{String(value)}</div>
                                     </div>
                                   );
                                 })}

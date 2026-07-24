@@ -54,7 +54,7 @@ export default function AIReportsPage() {
   }
 
   return (
-    <main className="p-4 sm:p-8 min-h-screen text-white">
+    <main className="p-4 sm:p-8 min-h-screen text-white max-w-[1200px] mx-auto">
       <Link href="/" className="text-[var(--accent)] hover:underline mb-6 inline-block">
         ← Back to Dashboard
       </Link>
