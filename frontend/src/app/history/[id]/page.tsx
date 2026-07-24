@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import LoadingSpinner from '../../../components/LoadingSpinner';
 
 export default function HistoryPage() {
   const params = useParams();
@@ -51,7 +52,7 @@ export default function HistoryPage() {
     }
   };
 
-  if (loading) return <div className="container" style={{textAlign: 'center', marginTop: '50px'}}>Loading History...</div>;
+  if (loading) return <LoadingSpinner text="Loading History..." />;
   if (!portfolio) return <div className="container" style={{textAlign: 'center', marginTop: '50px'}}>Portfolio not found.</div>;
 
   return (

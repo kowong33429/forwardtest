@@ -51,7 +51,6 @@ class PortfolioResponse(PortfolioBase):
     created_at: datetime
     updated_at: datetime
     positions: List[PositionResponse] = []
-    trades: List[TradeResponse] = []
     
     class Config:
         from_attributes = True

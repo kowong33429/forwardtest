@@ -102,7 +102,7 @@ def read_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
 
 @app.get("/trades/{portfolio_id}", response_model=List[schemas.TradeResponse])
 def read_trades(portfolio_id: int, db: Session = Depends(get_db)):
-    trades = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).order_by(database.Trade.timestamp.desc()).all()
+    trades = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).order_by(database.Trade.timestamp.desc()).limit(100).all()
     return trades
 
 @app.post("/engine/tick")

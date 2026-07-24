@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const DEMO_PORTFOLIOS = [
   {
@@ -79,13 +80,7 @@ export default function Home() {
       const res = await fetch(`${API_URL}/portfolios`);
       const data = await res.json();
       
-      const portsWithTrades = await Promise.all(data.map(async (p: any) => {
-        const trRes = await fetch(`${API_URL}/trades/${p.id}`);
-        const trades = await trRes.json();
-        return { ...p, trades };
-      }));
-      
-      setPortfolios(portsWithTrades);
+      setPortfolios(data);
     } catch (e) {
       console.error("Error fetching portfolios:", e);
     } finally {
@@ -159,7 +154,7 @@ export default function Home() {
     return Object.values(grouped);
   };
 
-  if (loading) return <div className="container" style={{textAlign: 'center', marginTop: '50px'}}>Loading Dashboard...</div>;
+  if (loading) return <LoadingSpinner text="Loading Dashboard..." />;
 
   return (
     <>

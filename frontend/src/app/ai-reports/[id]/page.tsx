@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import LoadingSpinner from '../../../components/LoadingSpinner';
 
 export default function AIReportsPage() {
   const params = useParams();
@@ -46,7 +47,7 @@ export default function AIReportsPage() {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-white">Loading AI Reports...</div>;
+    return <LoadingSpinner text="Loading AI Reports..." />;
   }
 
   if (!portfolio) {
@@ -54,7 +55,7 @@ export default function AIReportsPage() {
   }
 
   return (
-    <main className="p-4 sm:p-8 min-h-screen text-white max-w-[1200px] mx-auto">
+    <div className="container min-h-screen text-white">
       <Link href="/" className="text-[var(--accent)] hover:underline mb-6 inline-block">
         ← Back to Dashboard
       </Link>
@@ -113,6 +114,6 @@ export default function AIReportsPage() {
           ))
         )}
       </div>
-    </main>
+    </div>
   );
 }
