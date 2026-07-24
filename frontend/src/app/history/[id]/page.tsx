@@ -89,16 +89,16 @@ export default function HistoryPage() {
           <table className="exchange-table expandable-table">
             <thead>
               <tr>
+                <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
+                  Datetime ⏱️
+                </th>
                 <th>Symbol</th>
                 <th>Action</th>
                 <th>Exec. Price</th>
                 <th>Amount</th>
                 <th>Total (USDT)</th>
-                <th>Realized PnL</th>
-                <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
-                  Datetime ⏱️
-                </th>
                 <th>STOP LOSS</th>
+                <th>Realized PnL</th>
               </tr>
             </thead>
             <tbody>
@@ -132,16 +132,16 @@ export default function HistoryPage() {
                 return (
                   <React.Fragment key={trade.id}>
                     <tr onClick={() => toggleRow(`${trade.id}`)} className="clickable-row">
+                      <td>{formatTime(trade.timestamp)}</td>
                       <td style={{fontWeight: 'bold'}}>{trade.symbol}</td>
                       <td style={{color: actionColor, fontWeight: 'bold'}}>{trade.action}</td>
                       <td>${trade.price.toFixed(4)}</td>
                       <td>{trade.amount.toFixed(4)}</td>
                       <td>${totalUsdt.toFixed(2)}</td>
-                      <td>{pnlDisplay}</td>
-                      <td>{formatTime(trade.timestamp)}</td>
                       <td style={{color: 'var(--danger)', fontWeight: 'bold'}}>
                         {reasonData?.stop_loss_price ? `$${reasonData.stop_loss_price.toFixed(4)}(-$${(reasonData.est_loss_usd || 0).toFixed(2)})` : '-'}
                       </td>
+                      <td>{pnlDisplay}</td>
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
