@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List
 
 import database, schemas
@@ -12,10 +13,11 @@ from database import SessionLocal
 def migrate_db(engine):
     try:
         with engine.connect() as conn:
-            conn.execute("ALTER TABLE portfolios ADD COLUMN is_hidden INTEGER DEFAULT 0")
-            conn.execute("ALTER TABLE portfolios ADD COLUMN is_ai_enabled INTEGER DEFAULT 1")
-            conn.execute("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0")
-            conn.execute("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR")
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_hidden INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_ai_enabled INTEGER DEFAULT 1"))
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR"))
+            conn.commit()
     except Exception as e:
         print("Migration ignored (columns might exist):", e)
 
