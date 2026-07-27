@@ -159,7 +159,7 @@ export default function Home() {
   return (
     <>
       <div className="ticker-wrap">
-        <div className="ticker" style={{ animationDuration: prices.length > 0 ? '20s' : '0s' }}>
+        <div className="ticker" style={{ animationDuration: prices.length > 0 ? '60s' : '0s' }}>
           {prices.length > 0 ? (
             prices.map((p, i) => (
               <div className="ticker-item" key={i}>
