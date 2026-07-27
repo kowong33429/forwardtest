@@ -86,8 +86,9 @@ export default function HistoryPage() {
         </div>
 
         {portfolio.trades && portfolio.trades.length > 0 ? (
-          <table className="exchange-table expandable-table">
-            <thead>
+          <div className="overflow-x-auto">
+            <table className="exchange-table expandable-table">
+              <thead>
               <tr>
                 <th onClick={() => setShowThaiTime(!showThaiTime)} style={{cursor: 'pointer', textDecoration: 'underline dotted'}}>
                   Datetime ⏱️
@@ -209,8 +210,9 @@ export default function HistoryPage() {
                   </React.Fragment>
                 );
               })}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p style={{color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '2rem'}}>No trades yet for this algorithm.</p>
         )}

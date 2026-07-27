@@ -63,14 +63,14 @@ export default function AIReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold m-0">🤖 AI Strategy Reports</h1>
-          <p className="text-gray-400 mt-2">Daily Optimization insights for <strong className="text-white">{portfolio.algorithm_name}</strong></p>
+          <p className="text-gray-400 mt-2">Weekly Optimization insights for <strong className="text-white">{portfolio.algorithm_name}</strong></p>
         </div>
       </div>
 
       <div className="space-y-6">
         {reports.length === 0 ? (
           <div className="bg-black/30 p-8 rounded-xl text-center text-gray-400 border border-white/5">
-            No daily optimization reports available yet for this portfolio.
+            No weekly optimization reports available yet for this portfolio.
           </div>
         ) : (
           reports.map((report) => (
@@ -80,7 +80,7 @@ export default function AIReportsPage() {
                   <span className="text-2xl">🤖</span>
                   <div>
                     <h3 className="m-0 text-xl font-bold bg-gradient-to-r from-teal-400 to-blue-400 bg-clip-text text-transparent">
-                      Daily Optimizer (AI 1.2)
+                      Weekly Optimizer (AI 1.2)
                     </h3>
                     <span className="text-xs text-gray-400 block mt-1">{formatTime(report.timestamp)}</span>
                   </div>

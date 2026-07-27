@@ -159,11 +159,12 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     """
     
     try:
-        logger.info(f"Calling Gemini API (model: gemini-3.1-pro-preview) for trade insight. Symbol: {symbol}, Action: {action}")
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+        logger.info(f"Calling Gemini API (model: {gemini_model}) for trade insight. Symbol: {symbol}, Action: {action}")
         logger.info(f"========== FULL PROMPT ==========\n{prompt}\n=================================")
         
         response = client.models.generate_content(
-            model='gemini-3.1-pro-preview',
+            model=gemini_model,
             contents=prompt,
         )
         
@@ -193,7 +194,7 @@ def send_telegram_notification(message: str):
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not bot_token or not chat_id:
-        print("Telegram configuration missing. Skipping notification.")
+        logger.warning("Telegram configuration missing. Skipping notification.")
         return
         
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -203,14 +204,15 @@ def send_telegram_notification(message: str):
         "parse_mode": "Markdown"
     }
     try:
-        requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, timeout=5)
+        logger.info(f"Telegram notification sent. Status: {response.status_code}")
     except Exception as e:
         traceback.print_exc()
-        print(f"Failed to send Telegram message: {e}")
+        logger.error(f"Failed to send Telegram message: {e}")
 
-def run_daily_optimizer(db, portfolio_id: int):
+def run_weekly_optimizer(db, portfolio_id: int):
     """
-    AI 1.2: Strategy Optimizer. Analyzes today's trades and insights.
+    AI 1.2: Strategy Optimizer. Analyzes this week's trades and insights.
     """
     from database import Trade, AIInsight, Portfolio, DailyOptimizationResult
     from datetime import datetime, timedelta
@@ -219,12 +221,21 @@ def run_daily_optimizer(db, portfolio_id: int):
     portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
     if not portfolio: return None
     
-    # Get last 24 hours trades
-    yesterday = datetime.utcnow() - timedelta(days=1)
-    trades = db.query(Trade).filter(Trade.portfolio_id == portfolio_id, Trade.timestamp >= yesterday, Trade.action == "SELL").all()
+    # Get last 7 days trades
+    one_week_ago = datetime.utcnow() - timedelta(days=7)
+    trades = db.query(Trade).filter(Trade.portfolio_id == portfolio_id, Trade.timestamp >= one_week_ago, Trade.action == "SELL").all()
     
     if not trades:
-        print(f"No trades today for portfolio {portfolio_id} to optimize.")
+        print(f"No trades this week for portfolio {portfolio_id} to optimize.")
+        # Save empty result to avoid empty page
+        db_opt = DailyOptimizationResult(
+            portfolio_id=portfolio_id,
+            needs_tuning=0,
+            analysis="No closed trades in the past week, standing by.",
+            suggested_changes="N/A"
+        )
+        db.add(db_opt)
+        db.commit()
         return None
         
     trade_data_for_ai = []
@@ -244,7 +255,7 @@ def run_daily_optimizer(db, portfolio_id: int):
     
     prompt = f"""
     Act as a Lead Strategy Optimizer (Portfolio Manager).
-    Review these closed trades from the past 24 hours for algorithm: {portfolio.algorithm_name}.
+    Review these closed trades from the past week for algorithm: {portfolio.algorithm_name}.
     
     Trades Data:
     {trade_data_for_ai}
@@ -253,15 +264,16 @@ def run_daily_optimizer(db, portfolio_id: int):
     
     Provide your output in JSON format with exactly three keys:
     1. "needs_tuning": boolean (true if you strongly recommend adjusting the algorithm parameters, false if performance is acceptable).
-    2. "analysis": A brief explanation of the patterns found today.
+    2. "analysis": A brief explanation of the patterns found this week.
     3. "suggested_changes": What parameters or logic should be changed (if any).
     
     Output ONLY valid JSON. Keep the tone professional in Thai language.
     """
     
     try:
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model=gemini_model,
             contents=prompt,
         )
         text = response.text
@@ -300,7 +312,7 @@ def ai_1_3_executor(algo_name: str, optimization_result: dict):
     
     if needs_tuning:
         # Simulate backtesting
-        print(f"AI 1.3: Running backtest for {algo_name} based on AI 1.2 suggestions...")
+        logger.info(f"AI 1.3: Running backtest for {algo_name} based on AI 1.2 suggestions...")
         
         # Send Notification
         msg = f"🤖 *[AI 1.2 Alert]*\n"

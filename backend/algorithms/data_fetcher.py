@@ -102,9 +102,12 @@ def fetch_klines(symbol, interval="4h", limit=250):
         print(f"Error fetching klines for {symbol}: {e}")
         return None
 
-def get_market_data():
-    """Returns a dictionary of DataFrames for the top 30 coins"""
-    symbols = get_top_volume_symbols(30)
+def get_market_data(additional_symbols=None):
+    """Returns a dictionary of DataFrames for the top 30 coins plus any additional symbols"""
+    symbols = set(get_top_volume_symbols(30))
+    if additional_symbols:
+        symbols.update(additional_symbols)
+        
     data_dict = {}
     for sym in symbols:
         df = fetch_klines(sym)
@@ -112,8 +115,8 @@ def get_market_data():
             data_dict[sym] = df
     return data_dict
 
-def get_live_prices(limit=10):
-    """Fetch live prices for the top N USDT pairs"""
+def get_live_prices(limit=30, additional_symbols=None):
+    """Fetch live prices for the top N USDT pairs plus any additionally specified symbols"""
     try:
         data = safe_binance_request("/api/v3/ticker/24hr")
         
@@ -123,8 +126,17 @@ def get_live_prices(limit=10):
         usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
         usdt_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
         
+        top_pairs = usdt_pairs[:limit]
+        if additional_symbols:
+            held_pairs = [d for d in usdt_pairs if d['symbol'] in additional_symbols and d not in top_pairs]
+            top_pairs.extend(held_pairs)
+            
         # Format for frontend
-        prices = [{"symbol": p['symbol'], "price": float(p['lastPrice']), "change": float(p['priceChangePercent'])} for p in usdt_pairs[:limit]]
+        prices = [{"symbol": p['symbol'], "price": float(p['lastPrice']), "change": float(p['priceChangePercent'])} for p in top_pairs]
+        
+        if additional_symbols:
+            held_prices = [p for p in prices if p['symbol'] in additional_symbols]
+            logger.info(f"Current held symbols prices: {held_prices}")
         
         # Ensure BTC is always there for demo purposes
         if not any(p['symbol'] == 'BTCUSDT' for p in prices):

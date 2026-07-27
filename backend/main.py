@@ -17,12 +17,12 @@ def run_tick():
 def run_optimization():
     import ai_agent
     from database import SessionLocal, Portfolio
-    print("Scheduler running daily AI optimization...")
+    print("Scheduler running weekly AI optimization...")
     db = SessionLocal()
     try:
         portfolios = db.query(Portfolio).all()
         for p in portfolios:
-            ai_agent.run_daily_optimizer(db, p.id)
+            ai_agent.run_weekly_optimizer(db, p.id)
     finally:
         db.close()
 
@@ -53,8 +53,8 @@ async def lifespan(app: FastAPI):
     scheduler = BackgroundScheduler()
     # Run every 4 hours
     scheduler.add_job(run_tick, 'interval', hours=4)
-    # Run daily at 23:59
-    scheduler.add_job(run_optimization, 'cron', hour=23, minute=59)
+    # Run weekly on Sunday at 23:59 USA Time (America/New_York)
+    scheduler.add_job(run_optimization, 'cron', day_of_week='sun', hour=23, minute=59, timezone='America/New_York')
     scheduler.start()
     print("Background scheduler started.")
     yield
@@ -117,14 +117,16 @@ def force_optimize(db: Session = Depends(get_db)):
     portfolios = db.query(database.Portfolio).all()
     results = []
     for p in portfolios:
-        res = ai_agent.run_daily_optimizer(db, p.id)
+        res = ai_agent.run_weekly_optimizer(db, p.id)
         results.append({"portfolio": p.algorithm_name, "optimization": res})
     return {"status": "success", "message": "Optimization triggered", "results": results}
 
 @app.get("/market/prices")
-def get_prices():
+def get_prices(db: Session = Depends(get_db)):
     from algorithms import data_fetcher
-    prices = data_fetcher.get_live_prices(10)
+    all_positions = db.query(database.Position).all()
+    holding_symbols = list(set([p.symbol for p in all_positions]))
+    prices = data_fetcher.get_live_prices(limit=30, additional_symbols=holding_symbols)
     return {"status": "success", "data": prices}
 
 @app.get("/api/ping")

@@ -298,7 +298,7 @@ export default function Home() {
                   </Link>
                   <Link href={`/ai-reports/${port.id}`} passHref>
                     <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', padding: '1rem'}}>
-                      View AI Strategy Reports (Daily Optimizer) ➔
+                      View AI Strategy Reports (Weekly Optimizer) ➔
                     </button>
                   </Link>
                 </div>
