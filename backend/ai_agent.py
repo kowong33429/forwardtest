@@ -190,25 +190,14 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
             "lessons_learned": "Ensure Gemini API is accessible."
         }
 
-def send_telegram_notification(message: str):
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not bot_token or not chat_id:
-        logger.warning("Telegram configuration missing. Skipping notification.")
-        return
-        
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
+def read_algo_source(file_name):
     try:
-        response = requests.post(url, json=payload, timeout=5)
-        logger.info(f"Telegram notification sent. Status: {response.status_code}")
+        path = os.path.join("algorithms", file_name)
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
     except Exception as e:
-        traceback.print_exc()
-        logger.error(f"Failed to send Telegram message: {e}")
+        logger.error(f"Error reading source for {file_name}: {e}")
+        return ""
 
 def run_weekly_optimizer(db, portfolio_id: int):
     """
@@ -297,28 +286,97 @@ def run_weekly_optimizer(db, portfolio_id: int):
         db.commit()
         
         # Trigger AI 1.3
-        ai_1_3_executor(portfolio.algorithm_name, result)
+        ai_1_3_executor(db, portfolio, result)
         return result
     except Exception as e:
         traceback.print_exc()
         print(f"AI 1.2 failed: {e}")
         return None
 
-def ai_1_3_executor(algo_name: str, optimization_result: dict):
+def ai_1_3_executor(db, portfolio, optimization_result: dict):
     """
-    AI 1.3: Backtester & Notifier
+    AI 1.3: Quant Developer & Backtester
     """
     needs_tuning = optimization_result.get("needs_tuning", False)
     
-    if needs_tuning:
-        # Simulate backtesting
-        logger.info(f"AI 1.3: Running backtest for {algo_name} based on AI 1.2 suggestions...")
+    if needs_tuning and portfolio.file_name:
+        logger.info(f"AI 1.3: Starting code generation & backtest for {portfolio.algorithm_name}...")
         
-        # Send Notification
-        msg = f"🤖 *[AI 1.2 Alert]*\n"
-        msg += f"*Algorithm:* {algo_name}\n"
-        msg += f"*Analysis:* {optimization_result.get('analysis', '')}\n"
-        msg += f"*Suggestion:* {optimization_result.get('suggested_changes', '')}\n\n"
-        msg += "⏳ _AI 1.3 is simulating backtest for these changes..._"
+        old_source = read_algo_source(portfolio.file_name)
+        if not old_source: return
         
-        send_telegram_notification(msg)
+        prompt = f"""
+        You are an elite AI Quant Developer (AI 1.3).
+        Your Portfolio Manager (AI 1.2) has analyzed recent trading data and requested the following changes to the current algorithm.
+        
+        Manager's Analysis: {optimization_result.get('analysis', '')}
+        Manager's Requested Changes: {optimization_result.get('suggested_changes', '')}
+        
+        Current Algorithm Source Code:
+        ```python
+        {old_source}
+        ```
+        
+        TASK:
+        Modify the Python code to implement the requested changes.
+        Maintain the exact function signature: `def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0):`
+        Return ONLY valid, executable Python code. Do NOT wrap it in markdown block like ```python ... ```, just pure python code.
+        """
+        
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key: return
+        client = genai.Client(api_key=api_key)
+        
+        try:
+            gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+            response = client.models.generate_content(
+                model=gemini_model,
+                contents=prompt,
+            )
+            
+            new_code = response.text
+            if new_code.startswith("```python"):
+                new_code = new_code[9:-3].strip()
+            elif new_code.startswith("```"):
+                new_code = new_code[3:-3].strip()
+                
+            # Save new code
+            import time
+            timestamp = int(time.time())
+            new_file_name = f"gen_algo_{timestamp}.py"
+            new_algo_name = f"{portfolio.algorithm_name} (AI Tuned {timestamp})"
+            
+            new_path = os.path.join("algorithms", new_file_name)
+            with open(new_path, "w", encoding="utf-8") as f:
+                f.write(new_code)
+                
+            logger.info(f"AI 1.3: Generated new algo file: {new_file_name}")
+            
+            # Load and run backtest
+            import importlib
+            from algorithms import backtester
+            
+            module_name = f"algorithms.{new_file_name.replace('.py', '')}"
+            algo_module = importlib.import_module(module_name)
+            new_algo_func = algo_module.get_target_allocations
+            
+            logger.info(f"AI 1.3: Running 2-year backtest on {new_algo_name}...")
+            final_balance = backtester.run_backtest(new_algo_func, initial_balance=10000.0, days=730)
+            
+            if final_balance >= 15000.0: # 50% ROI over 2 years minimum criteria
+                from database import Portfolio
+                logger.info(f"AI 1.3: SUCCESS! Backtest passed with ${final_balance:.2f}. Registering {new_algo_name}...")
+                new_port = Portfolio(
+                    algorithm_name=new_algo_name,
+                    description=f"Auto-generated by AI 1.3 based on {portfolio.algorithm_name}. Expected 2Y ROI: {((final_balance-10000)/10000)*100:.2f}%",
+                    balance_usd=10000.0,
+                    file_name=new_file_name
+                )
+                db.add(new_port)
+                db.commit()
+            else:
+                logger.info(f"AI 1.3: REJECTED. Backtest failed criteria (${final_balance:.2f} < $15000.0).")
+                
+        except Exception as e:
+            logger.error(f"AI 1.3 Execution failed: {e}")
+            traceback.print_exc()

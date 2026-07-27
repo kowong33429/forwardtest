@@ -125,7 +125,7 @@ export default function Home() {
     }
   };
 
-  const displayPortfolios = viewMode === "demo" ? DEMO_PORTFOLIOS : portfolios;
+  const displayPortfolios = viewMode === "demo" ? DEMO_PORTFOLIOS : portfolios.filter((p: any) => !p.is_hidden);
 
   const calculateTotalValue = (port: any) => {
     let total = port.balance_usd;
@@ -216,10 +216,15 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="btn-group">
+          <div className="btn-group" style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
             <button className="btn" onClick={handleForceTick} style={{ opacity: viewMode === "demo" ? 0.5 : 1 }}>
               Force Engine Tick (Simulate 4H)
             </button>
+            <Link href="/algorithms" passHref>
+              <button className="btn" style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                ⚙️ Manage Algorithms
+              </button>
+            </Link>
           </div>
         </div>
 

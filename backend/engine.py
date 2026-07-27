@@ -5,16 +5,12 @@ from datetime import datetime
 import logging
 import json
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
-from algorithms import data_fetcher, v4, v5_1
+from algorithms import data_fetcher
 from ai_agent import generate_trade_insight
+import importlib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("TradingEngine")
-
-ALGORITHMS = {
-    "V4.0 Aggressive": v4.get_target_allocations,
-    "V5.1 God Mode": v5_1.get_target_allocations
-}
 
 # Global lock to prevent race conditions during Force Tick (Double Spending)
 engine_lock = threading.Lock()
@@ -43,14 +39,21 @@ def tick_engine():
             return
             
         logger.info(f"Successfully fetched market data for {len(market_data)} symbols.")
-        for algo_name, algo_func in ALGORITHMS.items():
-            # 2. Get or create portfolio
-            portfolio = db.query(Portfolio).filter(Portfolio.algorithm_name == algo_name).first()
-            if not portfolio:
-                portfolio = Portfolio(algorithm_name=algo_name, balance_usd=10000.0)
-                db.add(portfolio)
-                db.commit()
-                db.refresh(portfolio)
+        
+        active_portfolios = db.query(Portfolio).filter(Portfolio.is_deleted == 0).all()
+        for portfolio in active_portfolios:
+            algo_name = portfolio.algorithm_name
+            if not portfolio.file_name:
+                logger.warning(f"Portfolio {algo_name} has no file_name. Skipping.")
+                continue
+            
+            try:
+                module_name = f"algorithms.{portfolio.file_name.replace('.py', '')}"
+                algo_module = importlib.import_module(module_name)
+                algo_func = algo_module.get_target_allocations
+            except Exception as e:
+                logger.error(f"Failed to load algorithm {portfolio.file_name} for {algo_name}: {e}")
+                continue
                 
             logger.info(f"Step 2: Processing algorithm '{algo_name}'... Current Balance: ${portfolio.balance_usd:.2f}")
             
@@ -116,15 +119,16 @@ def tick_engine():
                     db.commit()
                     db.refresh(trade)
                     
-                    # TRIGGER AI INSIGHT
-                    insight_data = generate_trade_insight(sym, "SELL", profit_pct, pos.avg_entry_price, current_price, algo_name)
-                    insight = AIInsight(
-                        trade_id=trade.id,
-                        summary=insight_data.get("summary", ""),
-                        macro_context=insight_data.get("macro_context", ""),
-                        lessons_learned=insight_data.get("lessons_learned", "")
-                    )
-                    db.add(insight)
+                    # TRIGGER AI INSIGHT if enabled
+                    if getattr(portfolio, 'is_ai_enabled', 1):
+                        insight_data = generate_trade_insight(sym, "SELL", profit_pct, pos.avg_entry_price, current_price, algo_name)
+                        insight = AIInsight(
+                            trade_id=trade.id,
+                            summary=insight_data.get("summary", ""),
+                            macro_context=insight_data.get("macro_context", ""),
+                            lessons_learned=insight_data.get("lessons_learned", "")
+                        )
+                        db.add(insight)
                     
                     db.delete(pos)
                     db.commit()

@@ -9,6 +9,16 @@ from typing import List
 import database, schemas
 from database import SessionLocal
 
+def migrate_db(engine):
+    try:
+        with engine.connect() as conn:
+            conn.execute("ALTER TABLE portfolios ADD COLUMN is_hidden INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE portfolios ADD COLUMN is_ai_enabled INTEGER DEFAULT 1")
+            conn.execute("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR")
+    except Exception as e:
+        print("Migration ignored (columns might exist):", e)
+
 def run_tick():
     import engine
     print("Scheduler running tick...")
@@ -30,20 +40,25 @@ def run_optimization():
 async def lifespan(app: FastAPI):
     from apscheduler.schedulers.background import BackgroundScheduler
     
+    # Initialize DB schema
+    migrate_db(database.engine)
+    
     # Initialize default portfolios
     db = SessionLocal()
     try:
         algos = {
-            "V4.0 Aggressive": "A momentum and volatility-based algorithm that aggressively enters top-performing assets during macro bull regimes, and liquidates entirely to USDT during bear regimes.",
-            "V5.1 God Mode": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns."
+            "V4.0 Aggressive": {"desc": "A momentum and volatility-based algorithm that aggressively enters top-performing assets during macro bull regimes, and liquidates entirely to USDT during bear regimes.", "file": "v4.py"},
+            "V5.1 God Mode": {"desc": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns.", "file": "v5_1.py"}
         }
-        for name, desc in algos.items():
+        for name, data in algos.items():
             port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()
             if not port:
-                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, description=desc)
+                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, description=data["desc"], file_name=data["file"])
                 db.add(port)
-            elif port.description != desc:
-                port.description = desc
+            else:
+                port.description = data["desc"]
+                if not port.file_name:
+                    port.file_name = data["file"]
         db.commit()
     except Exception as e:
         print(f"Error initializing portfolios: {e}")
@@ -90,15 +105,42 @@ def get_db():
 
 @app.get("/portfolios", response_model=List[schemas.PortfolioResponse])
 def read_portfolios(db: Session = Depends(get_db)):
-    portfolios = db.query(database.Portfolio).all()
+    portfolios = db.query(database.Portfolio).filter(database.Portfolio.is_deleted == 0).all()
     return portfolios
 
 @app.get("/portfolios/{portfolio_id}", response_model=schemas.PortfolioResponse)
 def read_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
-    portfolio = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
+    portfolio = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id, database.Portfolio.is_deleted == 0).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     return portfolio
+
+@app.post("/portfolios/{portfolio_id}/toggle_hide")
+def toggle_hide(portfolio_id: int, db: Session = Depends(get_db)):
+    port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
+    if not port:
+        raise HTTPException(status_code=404, detail="Not found")
+    port.is_hidden = 1 if not port.is_hidden else 0
+    db.commit()
+    return {"status": "success", "is_hidden": bool(port.is_hidden)}
+
+@app.post("/portfolios/{portfolio_id}/toggle_ai")
+def toggle_ai(portfolio_id: int, db: Session = Depends(get_db)):
+    port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
+    if not port:
+        raise HTTPException(status_code=404, detail="Not found")
+    port.is_ai_enabled = 1 if not port.is_ai_enabled else 0
+    db.commit()
+    return {"status": "success", "is_ai_enabled": bool(port.is_ai_enabled)}
+
+@app.delete("/portfolios/{portfolio_id}")
+def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
+    port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
+    if not port:
+        raise HTTPException(status_code=404, detail="Not found")
+    port.is_deleted = 1
+    db.commit()
+    return {"status": "success", "message": "Portfolio deleted"}
 
 @app.get("/trades/{portfolio_id}", response_model=List[schemas.TradeResponse])
 def read_trades(portfolio_id: int, db: Session = Depends(get_db)):

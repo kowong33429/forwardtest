@@ -29,6 +29,10 @@ class Portfolio(Base):
     algorithm_name = Column(String, unique=True, index=True) # e.g. "V4", "V5.1"
     description = Column(String, nullable=True) # Algorithm summary
     balance_usd = Column(Float, default=10000.0)
+    is_hidden = Column(Integer, default=0) # SQLite uses Integer for boolean
+    is_ai_enabled = Column(Integer, default=1)
+    is_deleted = Column(Integer, default=0)
+    file_name = Column(String, nullable=True) # e.g. "v4.py"
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

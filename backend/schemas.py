@@ -45,6 +45,10 @@ class PortfolioBase(BaseModel):
     algorithm_name: str
     description: Optional[str] = None
     balance_usd: float
+    is_hidden: bool = False
+    is_ai_enabled: bool = True
+    is_deleted: bool = False
+    file_name: Optional[str] = None
 
 class PortfolioResponse(PortfolioBase):
     id: int
