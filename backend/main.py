@@ -10,16 +10,24 @@ from typing import List
 import database, schemas
 from database import SessionLocal
 
+from sqlalchemy import inspect
+
 def migrate_db(engine):
     try:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_hidden INTEGER DEFAULT 0"))
-            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_ai_enabled INTEGER DEFAULT 1"))
-            conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0"))
-            conn.execute(text("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR"))
-            conn.commit()
+        inspector = inspect(engine)
+        columns = [col['name'] for col in inspector.get_columns('portfolios')]
+        
+        with engine.begin() as conn:
+            if 'is_hidden' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_hidden INTEGER DEFAULT 0"))
+            if 'is_ai_enabled' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_ai_enabled INTEGER DEFAULT 1"))
+            if 'is_deleted' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0"))
+            if 'file_name' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR"))
     except Exception as e:
-        print("Migration ignored (columns might exist):", e)
+        print("Migration error:", e)
 
 def run_tick():
     import engine
