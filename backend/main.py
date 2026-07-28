@@ -159,11 +159,9 @@ def force_tick():
 def force_optimize(db: Session = Depends(get_db)):
     import ai_agent
     portfolios = db.query(database.Portfolio).all()
-    results = []
     for p in portfolios:
-        res = ai_agent.run_weekly_optimizer(db, p.id)
-        results.append({"portfolio": p.algorithm_name, "optimization": res})
-    return {"status": "success", "message": "Optimization triggered", "results": results}
+        ai_agent.run_weekly_optimizer(p.id)
+    return {"status": "success", "message": "Optimization triggered in background for all portfolios"}
 
 @app.get("/market/prices")
 def get_prices(db: Session = Depends(get_db)):

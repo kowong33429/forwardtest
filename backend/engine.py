@@ -6,7 +6,7 @@ import logging
 import json
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
 from algorithms import data_fetcher
-from ai_agent import generate_trade_insight
+from ai_agent import generate_trade_insight_core, async_generate_trade_insight_worker
 import importlib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -121,14 +121,10 @@ def tick_engine():
                     
                     # TRIGGER AI INSIGHT if enabled
                     if getattr(portfolio, 'is_ai_enabled', 1):
-                        insight_data = generate_trade_insight(sym, "SELL", profit_pct, pos.avg_entry_price, current_price, algo_name)
-                        insight = AIInsight(
-                            trade_id=trade.id,
-                            summary=insight_data.get("summary", ""),
-                            macro_context=insight_data.get("macro_context", ""),
-                            lessons_learned=insight_data.get("lessons_learned", "")
-                        )
-                        db.add(insight)
+                        threading.Thread(
+                            target=async_generate_trade_insight_worker, 
+                            args=(trade.id, sym, "SELL", profit_pct, pos.avg_entry_price, current_price, algo_name)
+                        ).start()
                     
                     db.delete(pos)
                     db.commit()

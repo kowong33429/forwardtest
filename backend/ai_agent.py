@@ -3,17 +3,16 @@ from google import genai
 import requests
 import traceback
 import logging
+import time
+import threading
+import json
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AIAgent")
 
 def fetch_crypto_news():
-    """
-    Fetches recent news from CryptoPanic API (free, public).
-    If it fails, returns a generic market context.
-    """
     try:
-        # CryptoPanic public endpoint for recent news
         url = "https://cryptopanic.com/api/v1/posts/?public=true"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -24,13 +23,10 @@ def fetch_crypto_news():
         else:
             return "No breaking news found."
     except Exception as e:
-        traceback.print_exc()
+        logger.error(f"Error fetching news: {e}")
         return f"Error fetching news: {e}"
 
 def fetch_macro_context():
-    """
-    Fetches global market metrics from CoinMarketCap.
-    """
     api_key = os.getenv("CMC_API_KEY")
     if not api_key:
         return "Macro data unavailable (Missing CMC_API_KEY)."
@@ -59,9 +55,6 @@ def fetch_macro_context():
         return f"Exception fetching macro data: {e}"
 
 def fetch_coin_fundamentals(symbol: str):
-    """
-    Fetches specific coin fundamental data from CoinMarketCap.
-    """
     api_key = os.getenv("CMC_API_KEY")
     if not api_key:
         return "Fundamental data unavailable (Missing CMC_API_KEY)."
@@ -82,7 +75,6 @@ def fetch_coin_fundamentals(symbol: str):
     result = []
     
     try:
-        # Quotes (FDV, Supply)
         res_q = requests.get(url_quotes, headers=headers, params=params, timeout=5)
         if res_q.status_code == 200:
             data = res_q.json().get("data", {}).get(clean_symbol, {})
@@ -96,7 +88,6 @@ def fetch_coin_fundamentals(symbol: str):
             if fdv is not None: result.append(f"FDV: ${fdv:,.0f}")
             if circ_supply is not None: result.append(f"Circulating Supply: {circ_supply:,.0f}")
             
-        # Info (Tags)
         res_i = requests.get(url_info, headers=headers, params=params, timeout=5)
         if res_i.status_code == 200:
             data = res_i.json().get("data", {}).get(clean_symbol, [])
@@ -117,17 +108,37 @@ def fetch_coin_fundamentals(symbol: str):
         logger.error(f"Error fetching fundamentals for {clean_symbol}: {e}")
         return f"Exception fetching fundamentals: {e}"
 
-def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
+def call_gemini_with_fallback(client, prompt, primary_model, fallback_model, max_retries=3, wait_time=600):
     """
-    AI 1.1 Uses Gemini API to generate an insight like a Top Data Scientist.
+    Tries primary_model. If it fails, waits wait_time seconds. 
+    After max_retries, it switches to fallback_model.
     """
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Calling API (Model: {primary_model}, Attempt {attempt+1}/{max_retries})")
+            response = client.models.generate_content(model=primary_model, contents=prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Error on {primary_model}: {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            
+    if fallback_model:
+        logger.warning(f"All {max_retries} retries failed for {primary_model}. Falling back to {fallback_model}...")
+        try:
+            response = client.models.generate_content(model=fallback_model, contents=prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Fallback model {fallback_model} also failed: {e}")
+            raise e
+    else:
+        raise Exception("Max retries reached and no fallback model provided.")
+
+def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return {
-            "summary": "AI Agent offline (Missing GEMINI_API_KEY).",
-            "macro_context": "N/A",
-            "lessons_learned": "Provide API key in .env to enable AI insights."
-        }
+        raise Exception("Missing GEMINI_API_KEY")
         
     client = genai.Client(api_key=api_key)
     
@@ -158,37 +169,48 @@ def generate_trade_insight(symbol: str, action: str, profit_pct: float, entry_pr
     Output ONLY valid JSON. Provide a deep, insightful analysis in Thai language.
     """
     
-    try:
-        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
-        logger.info(f"Calling Gemini API (model: {gemini_model}) for trade insight. Symbol: {symbol}, Action: {action}")
-        logger.info(f"========== FULL PROMPT ==========\n{prompt}\n=================================")
+    # AI 1.1 uses gemini-3.6-flash without fallback
+    text = call_gemini_with_fallback(client, prompt, "gemini-3.6-flash", None, max_retries=1, wait_time=0)
+    
+    if text.startswith("```json"):
+        text = text[7:-3]
+    elif text.startswith("```"):
+        text = text[3:-3]
         
-        response = client.models.generate_content(
-            model=gemini_model,
-            contents=prompt,
-        )
-        
-        logger.info(f"Gemini API call successful. Response length: {len(response.text)} chars.")
-        # Parse JSON from response
-        text = response.text
-        # Clean markdown code block if present
-        if text.startswith("```json"):
-            text = text[7:-3]
-        elif text.startswith("```"):
-            text = text[3:-3]
+    result = json.loads(text.strip())
+    return result
+
+def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
+    """
+    AI 1.1 Background Worker. Infinite retry every 10 mins until successful.
+    """
+    logger.info(f"AI 1.1 Worker started for trade_id {trade_id}")
+    while True:
+        try:
+            insight_data = generate_trade_insight_core(symbol, action, profit_pct, entry_price, exit_price, algorithm)
             
-        import json
-        result = json.loads(text.strip())
-        logger.info(f"Successfully parsed Gemini JSON response.")
-        return result
-    except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
-        traceback.print_exc()
-        return {
-            "summary": f"Failed to generate insight: {e}",
-            "macro_context": "Error parsing AI response.",
-            "lessons_learned": "Ensure Gemini API is accessible."
-        }
+            from database import SessionLocal, AIInsight
+            db = SessionLocal()
+            try:
+                insight = AIInsight(
+                    trade_id=trade_id,
+                    summary=insight_data.get("summary", ""),
+                    macro_context=insight_data.get("macro_context", ""),
+                    lessons_learned=insight_data.get("lessons_learned", "")
+                )
+                db.add(insight)
+                db.commit()
+                logger.info(f"AI 1.1: Successfully saved insight for trade {trade_id}")
+            except Exception as e:
+                logger.error(f"AI 1.1 DB Error: {e}")
+                db.rollback()
+            finally:
+                db.close()
+            break # Exit on success
+            
+        except Exception as e:
+            logger.error(f"AI 1.1 API Error: {e}. Retrying in 10 minutes...")
+            time.sleep(600)
 
 def read_algo_source(file_name):
     try:
@@ -199,103 +221,99 @@ def read_algo_source(file_name):
         logger.error(f"Error reading source for {file_name}: {e}")
         return ""
 
-def run_weekly_optimizer(db, portfolio_id: int):
+def async_weekly_optimizer_worker(portfolio_id: int):
     """
-    AI 1.2: Strategy Optimizer. Analyzes this week's trades and insights.
+    AI 1.2 Background Worker. Retries 3 times then falls back to flash.
     """
-    from database import Trade, AIInsight, Portfolio, DailyOptimizationResult
-    from datetime import datetime, timedelta
-    
-    # Get portfolio name
-    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
-    if not portfolio: return None
-    
-    # Get last 7 days trades
-    one_week_ago = datetime.utcnow() - timedelta(days=7)
-    trades = db.query(Trade).filter(Trade.portfolio_id == portfolio_id, Trade.timestamp >= one_week_ago, Trade.action == "SELL").all()
-    
-    if not trades:
-        print(f"No trades this week for portfolio {portfolio_id} to optimize.")
-        # Save empty result to avoid empty page
-        db_opt = DailyOptimizationResult(
-            portfolio_id=portfolio_id,
-            needs_tuning=0,
-            analysis="No closed trades in the past week, standing by.",
-            suggested_changes="N/A"
-        )
-        db.add(db_opt)
-        db.commit()
-        return None
-        
-    trade_data_for_ai = []
-    for t in trades:
-        insight = db.query(AIInsight).filter(AIInsight.trade_id == t.id).first()
-        trade_data_for_ai.append({
-            "symbol": t.symbol,
-            "profit_pct": f"{t.profit_pct:.2f}%" if t.profit_pct else "N/A",
-            "insight_summary": insight.summary if insight else "No insight",
-            "lessons_learned": insight.lessons_learned if insight else "No lesson"
-        })
-        
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key: return None
-    
-    client = genai.Client(api_key=api_key)
-    
-    prompt = f"""
-    Act as a Lead Strategy Optimizer (Portfolio Manager).
-    Review these closed trades from the past week for algorithm: {portfolio.algorithm_name}.
-    
-    Trades Data:
-    {trade_data_for_ai}
-    
-    Analyze the common patterns in these trades. Identify any consistent mistakes or market conditions the algorithm is struggling with.
-    
-    Provide your output in JSON format with exactly three keys:
-    1. "needs_tuning": boolean (true if you strongly recommend adjusting the algorithm parameters, false if performance is acceptable).
-    2. "analysis": A brief explanation of the patterns found this week.
-    3. "suggested_changes": What parameters or logic should be changed (if any).
-    
-    Output ONLY valid JSON. Keep the tone professional in Thai language.
-    """
+    logger.info(f"AI 1.2 Worker started for portfolio_id {portfolio_id}")
+    from database import SessionLocal, Trade, AIInsight, Portfolio, DailyOptimizationResult
+    db = SessionLocal()
     
     try:
-        gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
-        response = client.models.generate_content(
-            model=gemini_model,
-            contents=prompt,
-        )
-        text = response.text
-        if text.startswith("```json"):
-            text = text[7:-3]
-        elif text.startswith("```"):
-            text = text[3:-3]
+        portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+        if not portfolio: return
+        
+        one_week_ago = datetime.utcnow() - timedelta(days=7)
+        trades = db.query(Trade).filter(Trade.portfolio_id == portfolio_id, Trade.timestamp >= one_week_ago, Trade.action == "SELL").all()
+        
+        if not trades:
+            logger.info(f"No trades this week for portfolio {portfolio_id} to optimize.")
+            db_opt = DailyOptimizationResult(
+                portfolio_id=portfolio_id,
+                needs_tuning=0,
+                analysis="No closed trades in the past week, standing by.",
+                suggested_changes="N/A"
+            )
+            db.add(db_opt)
+            db.commit()
+            return
             
-        import json
-        result = json.loads(text.strip())
+        trade_data_for_ai = []
+        for t in trades:
+            insight = db.query(AIInsight).filter(AIInsight.trade_id == t.id).first()
+            trade_data_for_ai.append({
+                "symbol": t.symbol,
+                "profit_pct": f"{t.profit_pct:.2f}%" if t.profit_pct else "N/A",
+                "insight_summary": insight.summary if insight else "No insight",
+                "lessons_learned": insight.lessons_learned if insight else "No lesson"
+            })
+            
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key: return
         
-        # Save to database
-        needs_tuning = 1 if result.get("needs_tuning", False) else 0
-        db_opt = DailyOptimizationResult(
-            portfolio_id=portfolio_id,
-            needs_tuning=needs_tuning,
-            analysis=result.get("analysis", ""),
-            suggested_changes=result.get("suggested_changes", "")
-        )
-        db.add(db_opt)
-        db.commit()
+        client = genai.Client(api_key=api_key)
         
-        # Trigger AI 1.3
-        ai_1_3_executor(db, portfolio, result)
-        return result
-    except Exception as e:
-        traceback.print_exc()
-        print(f"AI 1.2 failed: {e}")
-        return None
+        prompt = f"""
+        Act as a Lead Strategy Optimizer (Portfolio Manager).
+        Review these closed trades from the past week for algorithm: {portfolio.algorithm_name}.
+        
+        Trades Data:
+        {trade_data_for_ai}
+        
+        Analyze the common patterns in these trades. Identify any consistent mistakes or market conditions the algorithm is struggling with.
+        
+        Provide your output in JSON format with exactly three keys:
+        1. "needs_tuning": boolean (true if you strongly recommend adjusting the algorithm parameters, false if performance is acceptable).
+        2. "analysis": A brief explanation of the patterns found this week.
+        3. "suggested_changes": What parameters or logic should be changed (if any).
+        
+        Output ONLY valid JSON. Keep the tone professional in Thai language.
+        """
+        
+        try:
+            # AI 1.2: gemini-3.1-pro-preview with 3 retries (10 min apart), fallback to flash
+            text = call_gemini_with_fallback(client, prompt, "gemini-3.1-pro-preview", "gemini-3.6-flash", max_retries=3, wait_time=600)
+            
+            if text.startswith("```json"):
+                text = text[7:-3]
+            elif text.startswith("```"):
+                text = text[3:-3]
+                
+            result = json.loads(text.strip())
+            
+            needs_tuning = 1 if result.get("needs_tuning", False) else 0
+            db_opt = DailyOptimizationResult(
+                portfolio_id=portfolio_id,
+                needs_tuning=needs_tuning,
+                analysis=result.get("analysis", ""),
+                suggested_changes=result.get("suggested_changes", "")
+            )
+            db.add(db_opt)
+            db.commit()
+            
+            # Trigger AI 1.3
+            ai_1_3_executor_core(db, portfolio, result)
+            
+        except Exception as e:
+            logger.error(f"AI 1.2 totally failed: {e}")
+            
+    finally:
+        db.close()
 
-def ai_1_3_executor(db, portfolio, optimization_result: dict):
+def ai_1_3_executor_core(db, portfolio, optimization_result: dict):
     """
     AI 1.3: Quant Developer & Backtester
+    Called internally by AI 1.2 worker thread, uses same retry/fallback.
     """
     needs_tuning = optimization_result.get("needs_tuning", False)
     
@@ -328,20 +346,14 @@ def ai_1_3_executor(db, portfolio, optimization_result: dict):
         client = genai.Client(api_key=api_key)
         
         try:
-            gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
-            response = client.models.generate_content(
-                model=gemini_model,
-                contents=prompt,
-            )
+            # AI 1.3: gemini-3.1-pro-preview with 3 retries (10 min apart), fallback to flash
+            new_code = call_gemini_with_fallback(client, prompt, "gemini-3.1-pro-preview", "gemini-3.6-flash", max_retries=3, wait_time=600)
             
-            new_code = response.text
             if new_code.startswith("```python"):
                 new_code = new_code[9:-3].strip()
             elif new_code.startswith("```"):
                 new_code = new_code[3:-3].strip()
                 
-            # Save new code
-            import time
             timestamp = int(time.time())
             new_file_name = f"gen_algo_{timestamp}.py"
             new_algo_name = f"{portfolio.algorithm_name} (AI Tuned {timestamp})"
@@ -352,7 +364,6 @@ def ai_1_3_executor(db, portfolio, optimization_result: dict):
                 
             logger.info(f"AI 1.3: Generated new algo file: {new_file_name}")
             
-            # Load and run backtest
             import importlib
             from algorithms import backtester
             
@@ -363,7 +374,7 @@ def ai_1_3_executor(db, portfolio, optimization_result: dict):
             logger.info(f"AI 1.3: Running 2-year backtest on {new_algo_name}...")
             final_balance = backtester.run_backtest(new_algo_func, initial_balance=10000.0, days=730)
             
-            if final_balance >= 15000.0: # 50% ROI over 2 years minimum criteria
+            if final_balance >= 15000.0:
                 from database import Portfolio
                 logger.info(f"AI 1.3: SUCCESS! Backtest passed with ${final_balance:.2f}. Registering {new_algo_name}...")
                 new_port = Portfolio(
@@ -380,3 +391,9 @@ def ai_1_3_executor(db, portfolio, optimization_result: dict):
         except Exception as e:
             logger.error(f"AI 1.3 Execution failed: {e}")
             traceback.print_exc()
+
+def run_weekly_optimizer(portfolio_id: int):
+    """
+    Entry point to spawn the AI 1.2 worker thread.
+    """
+    threading.Thread(target=async_weekly_optimizer_worker, args=(portfolio_id,)).start()

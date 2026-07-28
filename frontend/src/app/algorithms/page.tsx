@@ -84,7 +84,11 @@ export default function AlgorithmsDashboard() {
               </tr>
             ) : (
               portfolios.map(port => {
-                const pnl = port.balance_usd - 10000.0;
+                // Calculate total invested value based on avg_entry_price
+                const investedValue = port.positions?.reduce((acc: number, pos: any) => acc + (pos.amount * pos.avg_entry_price), 0) || 0;
+                const totalValue = port.balance_usd + investedValue;
+                
+                const pnl = totalValue - 10000.0;
                 const pnlSign = pnl >= 0 ? '+' : '';
                 const pnlColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
 
@@ -98,13 +102,14 @@ export default function AlgorithmsDashboard() {
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
-                        ${port.balance_usd.toFixed(2)}
-                      </span>
-                      <br/>
-                      <span style={{ color: pnlColor, fontSize: '0.9rem' }}>
-                        ({pnlSign}${pnl.toFixed(2)} from 10k)
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+                          ${totalValue.toFixed(2)}
+                        </span>
+                        <span style={{ color: pnlColor, fontSize: '0.9rem', fontWeight: 'bold' }}>
+                          ({pnlSign}${pnl.toFixed(2)} from 10k)
+                        </span>
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
