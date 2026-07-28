@@ -170,7 +170,8 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
     """
     
     # AI 1.1 uses gemini-3.6-flash without fallback
-    text = call_gemini_with_fallback(client, prompt, "gemini-3.6-flash", None, max_retries=1, wait_time=0)
+    fast_model = os.getenv("GEMINI_MODEL_FAST", "gemini-3.6-flash")
+    text = call_gemini_with_fallback(client, prompt, fast_model, None, max_retries=1, wait_time=0)
     
     if text.startswith("```json"):
         text = text[7:-3]
@@ -282,7 +283,9 @@ def async_weekly_optimizer_worker(portfolio_id: int):
         
         try:
             # AI 1.2: gemini-3.1-pro-preview with 3 retries (10 min apart), fallback to flash
-            text = call_gemini_with_fallback(client, prompt, "gemini-3.1-pro-preview", "gemini-3.6-flash", max_retries=3, wait_time=600)
+            smart_model = os.getenv("GEMINI_MODEL_SMART", "gemini-3.1-pro-preview")
+            fast_model = os.getenv("GEMINI_MODEL_FAST", "gemini-3.6-flash")
+            text = call_gemini_with_fallback(client, prompt, smart_model, fast_model, max_retries=3, wait_time=600)
             
             if text.startswith("```json"):
                 text = text[7:-3]
@@ -347,7 +350,9 @@ def ai_1_3_executor_core(db, portfolio, optimization_result: dict):
         
         try:
             # AI 1.3: gemini-3.1-pro-preview with 3 retries (10 min apart), fallback to flash
-            new_code = call_gemini_with_fallback(client, prompt, "gemini-3.1-pro-preview", "gemini-3.6-flash", max_retries=3, wait_time=600)
+            smart_model = os.getenv("GEMINI_MODEL_SMART", "gemini-3.1-pro-preview")
+            fast_model = os.getenv("GEMINI_MODEL_FAST", "gemini-3.6-flash")
+            new_code = call_gemini_with_fallback(client, prompt, smart_model, fast_model, max_retries=3, wait_time=600)
             
             if new_code.startswith("```python"):
                 new_code = new_code[9:-3].strip()
