@@ -9,6 +9,7 @@ from typing import List
 
 import database, schemas
 from database import SessionLocal
+from auth import auth_router, get_current_admin
 
 from sqlalchemy import inspect
 
@@ -105,6 +106,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -126,7 +129,7 @@ def read_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
     return portfolio
 
 @app.post("/portfolios/{portfolio_id}/toggle_hide")
-def toggle_hide(portfolio_id: int, db: Session = Depends(get_db)):
+def toggle_hide(portfolio_id: int, db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
     port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
     if not port:
         raise HTTPException(status_code=404, detail="Not found")
@@ -135,7 +138,7 @@ def toggle_hide(portfolio_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "is_hidden": bool(port.is_hidden)}
 
 @app.post("/portfolios/{portfolio_id}/toggle_ai")
-def toggle_ai(portfolio_id: int, db: Session = Depends(get_db)):
+def toggle_ai(portfolio_id: int, db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
     port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
     if not port:
         raise HTTPException(status_code=404, detail="Not found")
@@ -144,7 +147,7 @@ def toggle_ai(portfolio_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "is_ai_enabled": bool(port.is_ai_enabled)}
 
 @app.delete("/portfolios/{portfolio_id}")
-def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
+def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
     port = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id).first()
     if not port:
         raise HTTPException(status_code=404, detail="Not found")
@@ -158,13 +161,13 @@ def read_trades(portfolio_id: int, db: Session = Depends(get_db)):
     return trades
 
 @app.post("/engine/tick")
-def force_tick():
+def force_tick(admin: str = Depends(get_current_admin)):
     import engine
     engine.tick_engine()
     return {"status": "success", "message": "Engine tick triggered"}
 
 @app.post("/engine/optimize_now")
-def force_optimize(db: Session = Depends(get_db)):
+def force_optimize(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
     import ai_agent
     portfolios = db.query(database.Portfolio).all()
     for p in portfolios:

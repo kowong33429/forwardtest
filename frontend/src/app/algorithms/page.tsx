@@ -1,13 +1,23 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { useAuth } from '@/context/AuthContext';
 
 export default function AlgorithmsDashboard() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   
   const [portfolios, setPortfolios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { token, logout } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!token) {
+      router.push('/login');
+    }
+  }, [token, router]);
 
   const fetchPortfolios = async () => {
     try {
@@ -26,8 +36,12 @@ export default function AlgorithmsDashboard() {
   }, []);
 
   const handleToggleHide = async (id: number) => {
+    if (!token) return;
     try {
-      await fetch(`${API_URL}/portfolios/${id}/toggle_hide`, { method: 'POST' });
+      await fetch(`${API_URL}/portfolios/${id}/toggle_hide`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       fetchPortfolios();
     } catch (e) {
       alert("Error toggling hide");
@@ -35,8 +49,12 @@ export default function AlgorithmsDashboard() {
   };
 
   const handleToggleAI = async (id: number) => {
+    if (!token) return;
     try {
-      await fetch(`${API_URL}/portfolios/${id}/toggle_ai`, { method: 'POST' });
+      await fetch(`${API_URL}/portfolios/${id}/toggle_ai`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       fetchPortfolios();
     } catch (e) {
       alert("Error toggling AI");
@@ -44,9 +62,13 @@ export default function AlgorithmsDashboard() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!token) return;
     if (confirm("Are you sure you want to delete this algorithm? It will stop trading completely.")) {
       try {
-        await fetch(`${API_URL}/portfolios/${id}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/portfolios/${id}`, { 
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         fetchPortfolios();
       } catch (e) {
         alert("Error deleting");
@@ -58,14 +80,23 @@ export default function AlgorithmsDashboard() {
 
   return (
     <div className="container">
-      <div className="header" style={{ marginBottom: '2rem' }}>
+      <div className="header" style={{ marginBottom: '2rem', position: 'relative' }}>
+        {token && (
+          <button 
+            onClick={logout} 
+            className="absolute top-0 right-0 px-4 py-2 bg-transparent border border-red-500 text-red-500 rounded-lg hover:bg-red-500/10 transition-colors"
+            style={{ position: 'absolute', top: 0, right: 0 }}
+          >
+            Logout
+          </button>
+        )}
         <Link href="/" passHref>
           <button className="btn" style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', marginBottom: '1rem' }}>
             ← Back to Dashboard
           </button>
         </Link>
         <h1>⚙️ Algorithms Management</h1>
-        <p>Manage your running AI algorithms and portfolios.</p>
+        <p>Manage your running algorithms and portfolios.</p>
       </div>
 
       <div className="card overflow-x-auto">

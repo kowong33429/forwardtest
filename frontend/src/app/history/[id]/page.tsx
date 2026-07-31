@@ -70,7 +70,7 @@ export default function HistoryPage() {
               {portfolio.algorithm_name} - Trading History
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-              Detailed record of all trades and Gemini AI logic analysis.
+              Detailed record of all trades and logic analysis.
             </p>
           </div>
           <div className="relative w-full md:w-64">
@@ -153,7 +153,7 @@ export default function HistoryPage() {
                             <div className="mb-6 p-4 sm:p-5 rounded-xl bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 shadow-lg shadow-indigo-500/10 backdrop-blur-md">
                               <div className="flex items-center gap-2 mb-4 border-b border-indigo-500/20 pb-3">
                                 <span className="text-2xl">✨</span>
-                                <h4 className="m-0 text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Gemini AI Analysis</h4>
+                                <h4 className="m-0 text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Advanced Analysis</h4>
                               </div>
                               
                               <div className="space-y-4">

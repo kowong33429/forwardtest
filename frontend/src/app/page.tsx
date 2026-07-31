@@ -1,7 +1,9 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '@/context/AuthContext';
 
 const DEMO_PORTFOLIOS = [
   {
@@ -57,7 +59,9 @@ export default function Home() {
   const [portfolios, setPortfolios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<any[]>([]);
-  const [viewMode, setViewMode] = useState<"live" | "demo">("live");
+  const { token, logout } = useAuth();
+  const router = useRouter();
+
   
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [showThaiTime, setShowThaiTime] = useState(false);
@@ -112,12 +116,17 @@ export default function Home() {
   }, []);
 
   const handleForceTick = async () => {
-    if (viewMode === "demo") {
-      alert("Please switch to Live mode to trigger a real engine tick.");
+    if (!token) {
+      router.push("/login");
       return;
     }
     try {
-      await fetch(`${API_URL}/engine/tick`, { method: 'POST' });
+      await fetch(`${API_URL}/engine/tick`, { 
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       alert("Engine Tick Triggered!");
       setTimeout(fetchPortfolios, 2000);
     } catch (e) {
@@ -125,7 +134,7 @@ export default function Home() {
     }
   };
 
-  const displayPortfolios = viewMode === "demo" ? DEMO_PORTFOLIOS : portfolios.filter((p: any) => !p.is_hidden);
+  const displayPortfolios = portfolios.filter((p: any) => !p.is_hidden);
 
   const calculateTotalValue = (port: any) => {
     let total = port.balance_usd;
@@ -178,53 +187,36 @@ export default function Home() {
       </div>
       
       <div className="container">
-        <div className="header">
-          <h1>🚀 AI Quant Live Paper Trading</h1>
-          <p>Forward testing platform powered by Gemini AI</p>
-          
-          {/* Mode Switcher */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', margin: '2rem 0' }}>
+        <div className="header" style={{ position: 'relative' }}>
+          {token && (
             <button 
-              onClick={() => setViewMode("live")}
-              style={{
-                padding: '0.5rem 2rem', 
-                borderRadius: '20px', 
-                border: viewMode === "live" ? '2px solid var(--success)' : '1px solid var(--border)',
-                background: viewMode === "live" ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                color: viewMode === "live" ? 'var(--success)' : 'var(--text-muted)',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                transition: 'all 0.3s ease'
-              }}
+              onClick={logout} 
+              className="absolute top-0 right-0 px-4 py-2 bg-transparent border border-red-500 text-red-500 rounded-lg hover:bg-red-500/10 transition-colors"
+              style={{ position: 'absolute', top: 0, right: 0 }}
             >
-              🔴 Live Trades
+              Logout
             </button>
-            <button 
-              onClick={() => setViewMode("demo")}
-              style={{
-                padding: '0.5rem 2rem', 
-                borderRadius: '20px', 
-                border: viewMode === "demo" ? '2px solid var(--accent)' : '1px solid var(--border)',
-                background: viewMode === "demo" ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                color: viewMode === "demo" ? 'var(--accent)' : 'var(--text-muted)',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              ✨ Demo View
-            </button>
-          </div>
+          )}
+          <h1>🚀 Quantitative Live Paper Trading</h1>
+          <p>Advanced Forward Testing Platform</p>
 
-          <div className="btn-group" style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-            <button className="btn" onClick={handleForceTick} style={{ opacity: viewMode === "demo" ? 0.5 : 1 }}>
+          <div className="btn-group" style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+            <button className="btn" onClick={handleForceTick}>
               Force Engine Tick (Simulate 4H)
             </button>
-            <Link href="/algorithms" passHref>
-              <button className="btn" style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                ⚙️ Manage Algorithms
-              </button>
-            </Link>
+            <button 
+              className="btn" 
+              style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              onClick={() => {
+                if (!token) {
+                  router.push("/login");
+                } else {
+                  router.push("/algorithms");
+                }
+              }}
+            >
+              ⚙️ Manage Algorithms
+            </button>
           </div>
         </div>
 
@@ -298,12 +290,12 @@ export default function Home() {
                 <div style={{marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem'}}>
                   <Link href={`/history/${port.id}`} passHref>
                     <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', padding: '1rem'}}>
-                      View Full Trading History & AI Insights ➔
+                      View Full Trading History & Advanced Insights ➔
                     </button>
                   </Link>
-                  <Link href={`/ai-reports/${port.id}`} passHref>
+                  <Link href={`/strategy-reports/${port.id}`} passHref>
                     <button className="btn" style={{width: '100%', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', padding: '1rem'}}>
-                      View AI Strategy Reports (Weekly Optimizer) ➔
+                      View Strategy Reports (Weekly Optimizer) ➔
                     </button>
                   </Link>
                 </div>
