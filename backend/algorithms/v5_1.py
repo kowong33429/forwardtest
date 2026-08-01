@@ -25,12 +25,21 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
     current_regime = 'BULL' if btc_current_price > btc_sma_200 else 'BEAR'
     
     if current_regime == 'BEAR':
-        for sym in current_holdings:
-            symbol_reasons[sym] = {
-                "decision_logic": "SELL CRITERIA MET: Liquidating position because BTC Macro Regime is BEAR.",
+        if current_holdings:
+            for sym in current_holdings:
+                symbol_reasons[sym] = {
+                    "decision_logic": "SELL CRITERIA MET: Liquidating position because BTC Macro Regime is BEAR.",
+                    "formula": "BTC Price > 200 SMA = BULL",
+                    "calculation": f"{btc_current_price:.2f} > {btc_sma_200:.2f} = False",
+                    "price": data_dict[sym]['close'].iloc[-1] if sym in data_dict else 0
+                }
+        else:
+            symbol_reasons["BTCUSDT"] = {
+                "decision_logic": "HOLD CASH: No new positions opened because BTC Macro Regime is BEAR (BTC < 200 SMA).",
                 "formula": "BTC Price > 200 SMA = BULL",
                 "calculation": f"{btc_current_price:.2f} > {btc_sma_200:.2f} = False",
-                "price": data_dict[sym]['close'].iloc[-1] if sym in data_dict else 0
+                "price": btc_current_price,
+                "sma_200": btc_sma_200
             }
         return {}, symbol_reasons
         
@@ -59,10 +68,17 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
             }
             
     if not scores:
-        for sym in current_holdings:
-            symbol_reasons[sym] = {
-                "decision_logic": "SELL CRITERIA MET: Target allocation is 0% because the momentum score fell to 0 or below.",
-                "price": data_dict[sym]['close'].iloc[-1] if sym in data_dict else 0
+        if current_holdings:
+            for sym in current_holdings:
+                symbol_reasons[sym] = {
+                    "decision_logic": "SELL CRITERIA MET: Target allocation is 0% because the momentum score fell to 0 or below.",
+                    "price": data_dict[sym]['close'].iloc[-1] if sym in data_dict else 0
+                }
+        else:
+            symbol_reasons["MARKET"] = {
+                "decision_logic": "HOLD CASH: No coins met positive momentum and volume criteria.",
+                "formula": "Score = Momentum(20d) * Volume_Anomaly > 0",
+                "price": btc_current_price
             }
         return {}, symbol_reasons
         

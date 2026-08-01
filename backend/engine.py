@@ -1,7 +1,8 @@
+import os
 import time
 import traceback
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import json
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
@@ -14,6 +15,26 @@ logger = logging.getLogger("TradingEngine")
 
 # Global lock to prevent race conditions during Force Tick (Double Spending)
 engine_lock = threading.Lock()
+
+def cleanup_old_logs(db):
+    """
+    Clean up old engine logs if enabled in config.
+    Default is disabled (ENABLE_LOG_CLEANUP="false").
+    """
+    try:
+        enable_cleanup = os.getenv("ENABLE_LOG_CLEANUP", "false").lower() in ("true", "1", "yes")
+        if not enable_cleanup:
+            return
+            
+        retention_days = int(os.getenv("LOG_RETENTION_DAYS", "30"))
+        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+        
+        deleted_count = db.query(EngineLog).filter(EngineLog.timestamp < cutoff_date).delete(synchronize_session=False)
+        if deleted_count > 0:
+            db.commit()
+            logger.info(f"Cleaned up {deleted_count} old engine logs older than {retention_days} days (before {cutoff_date}).")
+    except Exception as e:
+        logger.error(f"Error during log cleanup: {e}")
 
 def tick_engine():
     """
@@ -167,6 +188,9 @@ def tick_engine():
                         db.add(new_pos)
                         db.commit()
                         
+        # Step 5: Clean up old logs if enabled
+        cleanup_old_logs(db)
+        
     except Exception as e:
         logger.error(f"Engine Tick Error: {e}")
         traceback.print_exc()
