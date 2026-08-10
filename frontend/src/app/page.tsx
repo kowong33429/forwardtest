@@ -65,7 +65,7 @@ export default function Home() {
   
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [showThaiTime, setShowThaiTime] = useState(false);
-  const [showPnlUsdt, setShowPnlUsdt] = useState(false);
+  const [showPnlUsdt, setShowPnlUsdt] = useState<Record<number, boolean>>({});
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -252,14 +252,15 @@ export default function Home() {
                     const isProfit = pnlUsd >= 0;
                     const color = isProfit ? 'var(--success)' : 'var(--danger)';
                     const sign = isProfit ? '+' : '';
+                    const isUsdt = !!showPnlUsdt[port.id];
                     return (
                       <div 
-                        onClick={() => setShowPnlUsdt(!showPnlUsdt)} 
-                        style={{ color, fontWeight: 'bold', fontSize: '1.2rem', cursor: 'pointer', userSelect: 'none', padding: '0.3rem 0.6rem', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', border: `1px solid ${color}40`, transition: 'all 0.2s' }}
+                        onClick={() => setShowPnlUsdt(prev => ({ ...prev, [port.id]: !prev[port.id] }))} 
+                        style={{ color, fontWeight: 'bold', fontSize: '1.2rem', cursor: 'pointer', userSelect: 'none', transition: 'all 0.2s' }}
                         title="Click to toggle USDT / %"
-                        className="hover:bg-white/10"
+                        className="hover:opacity-80"
                       >
-                        {showPnlUsdt ? `${sign}$${pnlUsd.toFixed(2)}` : `${sign}${pnlPct.toFixed(2)}%`}
+                        {isUsdt ? `(${sign}$${pnlUsd.toFixed(2)})` : `(${sign}${pnlPct.toFixed(2)}%)`}
                       </div>
                     );
                   })()}
@@ -268,18 +269,15 @@ export default function Home() {
                   Cash Balance: ${port.balance_usd.toFixed(2)}
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2 mt-4 p-3 bg-black/20 rounded-lg border border-white/5 text-sm text-center">
-                  <div>
-                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Started</div>
-                    <div className="text-white font-semibold">{new Date(port.created_at).toLocaleDateString()}</div>
+                <div className="flex flex-wrap items-center gap-3 mt-4 mb-2 text-xs text-slate-300 font-medium">
+                  <div className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1.5 rounded-md border border-white/10 shadow-sm">
+                    <span title="Started Date">🗓️</span> <span>{new Date(port.created_at).toLocaleDateString()}</span>
                   </div>
-                  <div>
-                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Duration</div>
-                    <div className="text-white font-semibold">{Math.max(1, Math.floor((new Date().getTime() - new Date(port.created_at).getTime()) / (1000 * 60 * 60 * 24)))} Days</div>
+                  <div className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1.5 rounded-md border border-white/10 shadow-sm">
+                    <span title="Duration">⏱️</span> <span>{Math.max(1, Math.floor((new Date().getTime() - new Date(port.created_at).getTime()) / (1000 * 60 * 60 * 24)))} Days</span>
                   </div>
-                  <div>
-                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Initial</div>
-                    <div className="text-white font-semibold">${(port.initial_balance || 10000.0).toFixed(2)}</div>
+                  <div className="flex items-center gap-1.5 bg-white/5 px-2.5 py-1.5 rounded-md border border-white/10 shadow-sm">
+                    <span title="Initial Balance">💰</span> <span>${(port.initial_balance || 10000.0).toFixed(2)} Initial</span>
                   </div>
                 </div>
                 

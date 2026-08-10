@@ -29,7 +29,8 @@ export default function HistoryPage() {
         const currentPort = allPorts.find((p: any) => p.id === Number(id));
         
         if (currentPort) {
-          const trRes = await fetch(`${API_URL}/trades/${id}?page=${page}&limit=${limit}`);
+          const searchParam = searchTerm ? `&search=${searchTerm}` : '';
+          const trRes = await fetch(`${API_URL}/trades/${id}?page=${page}&limit=${limit}${searchParam}`);
           const tradesData = await trRes.json();
           setPortfolio({ ...currentPort, trades: tradesData.data });
           setTotalPages(tradesData.total_pages || 1);
@@ -41,8 +42,16 @@ export default function HistoryPage() {
       }
     };
     
-    fetchHistory();
-  }, [id, API_URL, page]);
+    const timer = setTimeout(() => {
+      fetchHistory();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [id, API_URL, page, searchTerm]);
+
+  // Reset page to 1 when search term changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
 
   const toggleRow = (tradeId: string) => {
     setExpandedRows(prev => ({ ...prev, [tradeId]: !prev[tradeId] }));
@@ -109,12 +118,6 @@ export default function HistoryPage() {
             </thead>
             <tbody>
               {(portfolio.trades || [])
-                .filter((trade: any) => {
-                  const term = searchTerm.toLowerCase();
-                  const symbolMatch = trade.symbol?.toLowerCase().includes(term);
-                  const dateMatch = formatTime(trade.timestamp).toLowerCase().includes(term);
-                  return symbolMatch || dateMatch;
-                })
                 .map((trade: any) => {
                 const isExpanded = !!expandedRows[`${trade.id}`];
                 const reasonData = trade.reason ? (() => { try { return JSON.parse(trade.reason); } catch(e) { return null; } })() : null;
@@ -224,25 +227,41 @@ export default function HistoryPage() {
 
         {/* Pagination Controls */}
         {portfolio.trades && portfolio.trades.length > 0 && totalPages > 1 && (
-          <div className="flex justify-center items-center gap-4 mt-6">
+          <div className="flex justify-center items-center gap-2 sm:gap-4 mt-6">
             <button 
-              className="btn" 
-              style={{ padding: '0.5rem 1rem', background: page === 1 ? 'var(--surface)' : 'var(--accent)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1 }}
+              className="btn text-sm sm:text-base" 
+              style={{ padding: '0.4rem 0.8rem', background: page === 1 ? 'var(--surface)' : 'var(--accent)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1 }}
+              disabled={page === 1}
+              onClick={() => setPage(1)}
+            >
+              First
+            </button>
+            <button 
+              className="btn text-sm sm:text-base" 
+              style={{ padding: '0.4rem 0.8rem', background: page === 1 ? 'var(--surface)' : 'var(--accent)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1 }}
               disabled={page === 1}
               onClick={() => setPage(p => Math.max(1, p - 1))}
             >
-              Previous
+              Prev
             </button>
-            <span className="text-slate-300 font-bold">
+            <span className="text-slate-300 font-bold px-2 text-sm sm:text-base whitespace-nowrap">
               Page {page} of {totalPages}
             </span>
             <button 
-              className="btn" 
-              style={{ padding: '0.5rem 1rem', background: page === totalPages ? 'var(--surface)' : 'var(--accent)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1 }}
+              className="btn text-sm sm:text-base" 
+              style={{ padding: '0.4rem 0.8rem', background: page === totalPages ? 'var(--surface)' : 'var(--accent)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1 }}
               disabled={page === totalPages}
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             >
               Next
+            </button>
+            <button 
+              className="btn text-sm sm:text-base" 
+              style={{ padding: '0.4rem 0.8rem', background: page === totalPages ? 'var(--surface)' : 'var(--accent)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1 }}
+              disabled={page === totalPages}
+              onClick={() => setPage(totalPages)}
+            >
+              Last
             </button>
           </div>
         )}

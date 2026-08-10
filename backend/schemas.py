@@ -79,3 +79,10 @@ class DailyOptimizationResultResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class PaginatedTradeResponse(BaseModel):
+    data: List[TradeResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int

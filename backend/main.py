@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
 from typing import List
 
@@ -157,12 +157,16 @@ def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db), admin: st
     db.commit()
     return {"status": "success", "message": "Portfolio deleted"}
 
-@app.get("/trades/{portfolio_id}")
-def read_trades(portfolio_id: int, page: int = 1, limit: int = 10, db: Session = Depends(get_db)):
+@app.get("/trades/{portfolio_id}", response_model=schemas.PaginatedTradeResponse)
+def read_trades(portfolio_id: int, page: int = 1, limit: int = 10, search: str = None, db: Session = Depends(get_db)):
     offset = (page - 1) * limit
-    total = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).count()
-    trades = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).order_by(database.Trade.timestamp.desc()).offset(offset).limit(limit).all()
-    total_pages = (total + limit - 1) // limit
+    query = db.query(database.Trade).options(joinedload(database.Trade.insight)).filter(database.Trade.portfolio_id == portfolio_id)
+    if search:
+        query = query.filter(database.Trade.symbol.ilike(f"%{search}%"))
+    
+    total = query.count()
+    trades = query.order_by(database.Trade.timestamp.desc()).offset(offset).limit(limit).all()
+    total_pages = (total + limit - 1) // limit if limit > 0 else 1
     
     return {
         "data": trades,
