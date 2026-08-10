@@ -27,6 +27,8 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN is_deleted INTEGER DEFAULT 0"))
             if 'file_name' not in columns:
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN file_name VARCHAR"))
+            if 'initial_balance' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN initial_balance FLOAT DEFAULT 10000.0"))
     except Exception as e:
         print("Migration error:", e)
 
@@ -64,7 +66,7 @@ async def lifespan(app: FastAPI):
         for name, data in algos.items():
             port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()
             if not port:
-                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, description=data["desc"], file_name=data["file"])
+                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, initial_balance=10000.0, description=data["desc"], file_name=data["file"])
                 db.add(port)
             else:
                 port.description = data["desc"]
@@ -155,10 +157,20 @@ def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db), admin: st
     db.commit()
     return {"status": "success", "message": "Portfolio deleted"}
 
-@app.get("/trades/{portfolio_id}", response_model=List[schemas.TradeResponse])
-def read_trades(portfolio_id: int, db: Session = Depends(get_db)):
-    trades = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).order_by(database.Trade.timestamp.desc()).limit(100).all()
-    return trades
+@app.get("/trades/{portfolio_id}")
+def read_trades(portfolio_id: int, page: int = 1, limit: int = 10, db: Session = Depends(get_db)):
+    offset = (page - 1) * limit
+    total = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).count()
+    trades = db.query(database.Trade).filter(database.Trade.portfolio_id == portfolio_id).order_by(database.Trade.timestamp.desc()).offset(offset).limit(limit).all()
+    total_pages = (total + limit - 1) // limit
+    
+    return {
+        "data": trades,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages
+    }
 
 @app.post("/engine/tick")
 def force_tick(admin: str = Depends(get_current_admin)):

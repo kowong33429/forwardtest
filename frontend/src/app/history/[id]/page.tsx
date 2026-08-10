@@ -14,20 +14,25 @@ export default function HistoryPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [showThaiTime, setShowThaiTime] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const limit = 10;
 
   useEffect(() => {
     if (!id) return;
     
     const fetchHistory = async () => {
       try {
+        setLoading(true);
         const portRes = await fetch(`${API_URL}/portfolios`);
         const allPorts = await portRes.json();
         const currentPort = allPorts.find((p: any) => p.id === Number(id));
         
         if (currentPort) {
-          const trRes = await fetch(`${API_URL}/trades/${id}`);
-          const trades = await trRes.json();
-          setPortfolio({ ...currentPort, trades });
+          const trRes = await fetch(`${API_URL}/trades/${id}?page=${page}&limit=${limit}`);
+          const tradesData = await trRes.json();
+          setPortfolio({ ...currentPort, trades: tradesData.data });
+          setTotalPages(tradesData.total_pages || 1);
         }
       } catch (e) {
         console.error("Error fetching history:", e);
@@ -37,7 +42,7 @@ export default function HistoryPage() {
     };
     
     fetchHistory();
-  }, [id, API_URL]);
+  }, [id, API_URL, page]);
 
   const toggleRow = (tradeId: string) => {
     setExpandedRows(prev => ({ ...prev, [tradeId]: !prev[tradeId] }));
@@ -215,6 +220,31 @@ export default function HistoryPage() {
           </div>
         ) : (
           <p style={{color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '2rem'}}>No trades yet for this algorithm.</p>
+        )}
+
+        {/* Pagination Controls */}
+        {portfolio.trades && portfolio.trades.length > 0 && totalPages > 1 && (
+          <div className="flex justify-center items-center gap-4 mt-6">
+            <button 
+              className="btn" 
+              style={{ padding: '0.5rem 1rem', background: page === 1 ? 'var(--surface)' : 'var(--accent)', cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? 0.5 : 1 }}
+              disabled={page === 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+            <span className="text-slate-300 font-bold">
+              Page {page} of {totalPages}
+            </span>
+            <button 
+              className="btn" 
+              style={{ padding: '0.5rem 1rem', background: page === totalPages ? 'var(--surface)' : 'var(--accent)', cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? 0.5 : 1 }}
+              disabled={page === totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
         )}
       </div>
     </div>

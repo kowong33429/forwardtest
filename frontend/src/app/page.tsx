@@ -65,6 +65,7 @@ export default function Home() {
   
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [showThaiTime, setShowThaiTime] = useState(false);
+  const [showPnlUsdt, setShowPnlUsdt] = useState(false);
 
   const toggleRow = (id: string) => {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -239,11 +240,47 @@ export default function Home() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                   Total Value
                 </div>
-                <div className="balance" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
-                  ${calculateTotalValue(port).toFixed(2)}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', marginBottom: '1rem' }}>
+                  <div className="balance" style={{ fontSize: '2.5rem', margin: 0 }}>
+                    ${calculateTotalValue(port).toFixed(2)}
+                  </div>
+                  {(() => {
+                    const totalVal = calculateTotalValue(port);
+                    const initial = port.initial_balance || 10000.0;
+                    const pnlUsd = totalVal - initial;
+                    const pnlPct = (pnlUsd / initial) * 100;
+                    const isProfit = pnlUsd >= 0;
+                    const color = isProfit ? 'var(--success)' : 'var(--danger)';
+                    const sign = isProfit ? '+' : '';
+                    return (
+                      <div 
+                        onClick={() => setShowPnlUsdt(!showPnlUsdt)} 
+                        style={{ color, fontWeight: 'bold', fontSize: '1.2rem', cursor: 'pointer', userSelect: 'none', padding: '0.3rem 0.6rem', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', border: `1px solid ${color}40`, transition: 'all 0.2s' }}
+                        title="Click to toggle USDT / %"
+                        className="hover:bg-white/10"
+                      >
+                        {showPnlUsdt ? `${sign}$${pnlUsd.toFixed(2)}` : `${sign}${pnlPct.toFixed(2)}%`}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ color: 'var(--success)', fontWeight: 'bold', fontSize: '1.1rem' }}>
                   Cash Balance: ${port.balance_usd.toFixed(2)}
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2 mt-4 p-3 bg-black/20 rounded-lg border border-white/5 text-sm text-center">
+                  <div>
+                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Started</div>
+                    <div className="text-white font-semibold">{new Date(port.created_at).toLocaleDateString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Duration</div>
+                    <div className="text-white font-semibold">{Math.max(1, Math.floor((new Date().getTime() - new Date(port.created_at).getTime()) / (1000 * 60 * 60 * 24)))} Days</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 text-xs uppercase mb-1 tracking-wider">Initial</div>
+                    <div className="text-white font-semibold">${(port.initial_balance || 10000.0).toFixed(2)}</div>
+                  </div>
                 </div>
                 
                 <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem'}}>Current Positions</h3>
