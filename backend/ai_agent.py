@@ -135,7 +135,7 @@ def call_gemini_with_fallback(client, prompt, primary_model, fallback_model, max
     else:
         raise Exception("Max retries reached and no fallback model provided.")
 
-def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
+def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str, algo_source: str = "", ohlc_data: str = ""):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise Exception("Missing GEMINI_API_KEY")
@@ -157,14 +157,34 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
     - Exit Price: ${exit_price:.4f}
     - Profit/Loss: {profit_pct:.2f}%
     
-    Global Macro Context: {macro_context}
-    Coin Fundamental Data: {fundamental_data}
-    Recent Crypto News Context: {news_context}
+    Algorithm Source Code:
+    ```python
+    {algo_source}
+    ```
     
-    Conduct a deep-dive analysis on this trade. Provide your output in JSON format with exactly three keys:
-    1. "summary": A detailed breakdown of why this trade resulted in a profit/loss, connecting price action behavior with market conditions.
-    2. "macro_context": Analyze how macro anomalies or news explicitly influenced the asset's momentum during the holding period.
-    3. "lessons_learned": A high-level statistical or logical insight that the Strategy Optimizer (AI 1.2) can use to identify systemic flaws or edge cases.
+    Recent OHLC Data (4h candles):
+    {ohlc_data}
+    
+    Support Factors:
+    - Global Macro Context: {macro_context}
+    - Coin Fundamental Data: {fundamental_data}
+    - Recent Crypto News Context: {news_context}
+    
+    Conduct a deep-dive analysis on this trade focusing primarily on the algorithm logic and coin price behavior.
+    Address the following points in your analysis:
+    - Why didn't the algorithm close the position at the highest price?
+    - Was the entry point optimal enough?
+    - How can we adjust our logic to achieve higher profit?
+    - Are there any signs of anomalous price behavior?
+    - Did the algorithm prematurely exit due to noise, or was it a solid risk-management decision?
+    - What specific technical thresholds (e.g., RSI, MACD, MA) from the logic were triggered, and were they accurate?
+    - Is the algorithm overly sensitive to volatility, or too slow to react during this trade?
+    - Were there missed opportunities to scale in or scale out (take partial profits) during the trend?
+    
+    Provide your output in JSON format with exactly three keys:
+    1. "summary": A detailed breakdown answering the questions above, connecting algorithm logic with price action behavior.
+    2. "macro_context": Analyze how macro anomalies, fundamentals, or news explicitly influenced the asset's momentum as a support factor.
+    3. "lessons_learned": A high-level statistical or logical insight that the Strategy Optimizer (AI 1.2) can use to identify systemic flaws or edge cases, explicitly suggesting logic adjustments.
     
     Output ONLY valid JSON. Provide a deep, insightful analysis in Thai language.
     """
@@ -188,9 +208,45 @@ def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str,
     logger.info(f"AI 1.1 Worker started for trade_id {trade_id}")
     while True:
         try:
-            insight_data = generate_trade_insight_core(symbol, action, profit_pct, entry_price, exit_price, algorithm)
+            from database import SessionLocal, AIInsight, Trade
+            from algorithms.data_fetcher import fetch_klines
             
-            from database import SessionLocal, AIInsight
+            db = SessionLocal()
+            algo_source = ""
+            ohlc_data = ""
+            try:
+                trade = db.query(Trade).filter(Trade.id == trade_id).first()
+                limit = 30
+                if trade and trade.portfolio:
+                    if trade.portfolio.file_name:
+                        algo_source = read_algo_source(trade.portfolio.file_name)
+                        
+                    # Find the corresponding BUY trade to calculate holding duration
+                    buy_trade = db.query(Trade).filter(
+                        Trade.portfolio_id == trade.portfolio_id,
+                        Trade.symbol == trade.symbol,
+                        Trade.action == "BUY",
+                        Trade.timestamp < trade.timestamp
+                    ).order_by(Trade.timestamp.desc()).first()
+                    
+                    if buy_trade:
+                        duration = trade.timestamp - buy_trade.timestamp
+                        duration_hours = duration.total_seconds() / 3600
+                        # 4h candles = duration in hours / 4. Add 10 candles as buffer for context.
+                        calculated_limit = int((duration_hours / 4) + 10)
+                        # Cap at 1000 (Binance maximum per request) and min 30
+                        limit = min(max(calculated_limit, 30), 1000)
+                    
+                df = fetch_klines(symbol, interval="4h", limit=limit)
+                if df is not None and not df.empty:
+                    ohlc_data = df.to_string()
+            except Exception as e:
+                logger.error(f"Error fetching extra context for AI 1.1: {e}")
+            finally:
+                db.close()
+                
+            insight_data = generate_trade_insight_core(symbol, action, profit_pct, entry_price, exit_price, algorithm, algo_source, ohlc_data)
+            
             db = SessionLocal()
             try:
                 insight = AIInsight(
