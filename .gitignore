@@ -1,0 +1,17 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+__pycache__/
+
+# Node
+node_modules/
+
+# Database
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
