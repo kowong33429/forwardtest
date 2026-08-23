@@ -135,7 +135,7 @@ export default function Home() {
     }
   };
 
-  const displayPortfolios = portfolios.filter((p: any) => !p.is_hidden);
+  const displayPortfolios = portfolios.filter((p: any) => !p.is_hidden).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
   const calculateTotalValue = (port: any) => {
     let total = port.balance_usd;

@@ -9,7 +9,7 @@ class AIInsightBase(BaseModel):
 
 class AIInsightResponse(AIInsightBase):
     id: int
-    trade_id: int
+    trade_id: Optional[int] = None
     created_at: datetime
     
     class Config:
@@ -32,11 +32,45 @@ class TradeResponse(TradeBase):
     class Config:
         from_attributes = True
 
+class FuturesTradeBase(BaseModel):
+    symbol: str
+    direction: str
+    action: str
+    amount: float
+    price: float
+    profit_pct: Optional[float] = None
+    profit_usd: Optional[float] = None
+    reason: Optional[str] = None
+    ticket_id: Optional[str] = None
+
+class FuturesTradeResponse(FuturesTradeBase):
+    id: int
+    portfolio_id: int
+    timestamp: datetime
+    insight: Optional[AIInsightResponse] = None
+    
+    class Config:
+        from_attributes = True
+
 class PositionResponse(BaseModel):
     id: int
     symbol: str
     amount: float
     avg_entry_price: float
+    
+    class Config:
+        from_attributes = True
+
+class FuturesPositionResponse(BaseModel):
+    id: int
+    symbol: str
+    direction: str
+    amount: float
+    avg_entry_price: float
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    leverage: float
+    ticket_id: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -56,6 +90,7 @@ class PortfolioResponse(PortfolioBase):
     created_at: datetime
     updated_at: datetime
     positions: List[PositionResponse] = []
+    futures_positions: List[FuturesPositionResponse] = []
     
     class Config:
         from_attributes = True
@@ -82,6 +117,13 @@ class DailyOptimizationResultResponse(BaseModel):
 
 class PaginatedTradeResponse(BaseModel):
     data: List[TradeResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+class PaginatedFuturesTradeResponse(BaseModel):
+    data: List[FuturesTradeResponse]
     total: int
     page: int
     limit: int

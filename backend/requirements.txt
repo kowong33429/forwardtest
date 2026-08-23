@@ -12,3 +12,6 @@ pandas==2.2.2
 numpy==1.26.4
 scipy==1.13.1
 PyJWT>=2.8.0
+hmmlearn>=0.3.0
+pykalman>=0.9.5
+metaapi-cloud-sdk>=24.0.0
