@@ -6,8 +6,9 @@ def fix_initial_balance():
         port = db.query(Portfolio).filter(Portfolio.algorithm_name == "V43 Whipsaw Killer").first()
         if port:
             port.initial_balance = 10068.0
+            port.balance_usd = 10068.0
             db.commit()
-            print("Successfully updated initial_balance for V43 to 10068.0")
+            print("Successfully updated initial_balance and balance_usd for V43 to 10068.0")
         else:
             print("V43 portfolio not found")
     finally:
