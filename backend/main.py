@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
     try:
         algos = {
             "V4.0 Aggressive": {"desc": "A momentum and volatility-based algorithm that aggressively enters top-performing assets during macro bull regimes, and liquidates entirely to USDT during bear regimes.", "file": "v4.py", "exec": "paper"},
+            "V5.0 Low-Cap Sniper": {"desc": "Targets breakout Low-Cap gems (10M-300M Market Cap) on 4H candles with strict fundamental filters.", "file": "v5.py", "exec": "paper"},
             "V5.1 God Mode": {"desc": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns.", "file": "v5_1.py", "exec": "paper"},
             "V9 Kinetic God": {"desc": "Production Quantitative Scanner using Kinetic Energy Math, Calculus Deceleration, and dynamic Z-scores.", "file": "algo_v9_kinetic_god.py", "exec": "paper"},
             "V43 Whipsaw Killer": {"desc": "The ultimate Gold Future AI using HMM and Kalman Filter with CHOP indicator to avoid fractal consolidations. Supports Exness MT5 Cent account.", "file": "v43.py", "exec": "real"}
@@ -113,10 +114,11 @@ async def lifespan(app: FastAPI):
         db.close()
 
     scheduler = BackgroundScheduler()
-    # Separate schedulers for each algorithm
-    scheduler.add_job(run_tick, 'interval', hours=4, args=["V4.0 Aggressive"])
-    scheduler.add_job(run_tick, 'interval', hours=4, args=["V5.1 God Mode"])
-    scheduler.add_job(run_tick, 'interval', hours=4, args=["V9 Kinetic God"])
+    # Separate schedulers for each algorithm using precise 4H cron (UTC candle closures)
+    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V4.0 Aggressive"])
+    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V5.0 Low-Cap Sniper"])
+    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V5.1 God Mode"])
+    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V9 Kinetic God"])
     # Run daily at 17:00 New York Time (Market Close for Gold / Daily candle close)
     scheduler.add_job(run_tick, 'cron', hour=17, minute=0, timezone='America/New_York', args=["V43 Whipsaw Killer"])
     

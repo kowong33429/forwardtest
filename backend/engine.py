@@ -127,8 +127,9 @@ def tick_engine(algo_name=None):
                     gain_pct = (current_price - pos.avg_entry_price) / pos.avg_entry_price
                     
                     # Hardcoded defaults for V9 / Spot algorithms (-10% SL, +30% TP)
-                    # (In a real system, we'd read this from pos.sl and pos.tp, but Legacy Spot doesn't have those columns)
-                    if gain_pct <= -0.10 or gain_pct >= 0.30:
+                    # (Bypass for v5 algorithms so they can manage their own exits)
+                    is_v5 = current_algo_name and "v5" in current_algo_name.lower()
+                    if not is_v5 and (gain_pct <= -0.10 or gain_pct >= 0.30):
                         reason_msg = f"TAKE PROFIT (+{gain_pct*100:.1f}%)" if gain_pct >= 0.30 else f"STOP LOSS ({gain_pct*100:.1f}%)"
                         logger.info(f"  {reason_msg} triggered for {pos.symbol} at {current_price:.4f}")
                         portfolio.balance_usd += pos.amount * current_price
@@ -224,6 +225,9 @@ def tick_engine(algo_name=None):
             # Next, open new positions
             for sym, target_weight in targets.items():
                 current_price = current_prices.get(sym)
+                if not current_price and sym in symbol_reasons and 'price' in symbol_reasons[sym]:
+                    current_price = symbol_reasons[sym]['price']
+                    
                 if not current_price or target_weight == 0: continue
                 
                 target_usd = total_value * abs(target_weight)
