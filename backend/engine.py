@@ -120,6 +120,28 @@ def tick_engine(algo_name=None):
                     
             logger.info(f"  Total Estimated Value: ${total_value:.2f}")
             
+            # 3.5. Execute pending Stop Loss & Take Profit (Paper Trading Simulation)
+            for pos in positions[:]:
+                if pos.symbol in current_prices:
+                    current_price = current_prices[pos.symbol]
+                    gain_pct = (current_price - pos.avg_entry_price) / pos.avg_entry_price
+                    
+                    # Hardcoded defaults for V9 / Spot algorithms (-10% SL, +30% TP)
+                    # (In a real system, we'd read this from pos.sl and pos.tp, but Legacy Spot doesn't have those columns)
+                    if gain_pct <= -0.10 or gain_pct >= 0.30:
+                        reason_msg = f"TAKE PROFIT (+{gain_pct*100:.1f}%)" if gain_pct >= 0.30 else f"STOP LOSS ({gain_pct*100:.1f}%)"
+                        logger.info(f"  {reason_msg} triggered for {pos.symbol} at {current_price:.4f}")
+                        portfolio.balance_usd += pos.amount * current_price
+                        
+                        trade = Trade(portfolio_id=portfolio.id, symbol=pos.symbol, action="SELL", amount=pos.amount, price=current_price, profit_pct=gain_pct*100, reason=reason_msg)
+                        db.add(trade)
+                        db.delete(pos)
+                        db.commit()
+                        
+                        positions.remove(pos)
+                        if pos.symbol in current_holdings:
+                            current_holdings.remove(pos.symbol)
+            
             # 4. Get target allocations
             from database import FuturesTrade
             import inspect

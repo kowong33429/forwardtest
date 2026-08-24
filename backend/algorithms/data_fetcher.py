@@ -103,8 +103,8 @@ def fetch_klines(symbol, interval="4h", limit=250):
         return None
 
 def get_market_data(additional_symbols=None):
-    """Returns a dictionary of DataFrames for the top 30 coins plus any additional symbols"""
-    symbols = set(get_top_volume_symbols(30))
+    """Returns a dictionary of DataFrames for the top 50 coins plus any additional symbols"""
+    symbols = set(get_top_volume_symbols(50))
     if additional_symbols:
         symbols.update(additional_symbols)
         
@@ -115,7 +115,7 @@ def get_market_data(additional_symbols=None):
             data_dict[sym] = df
     return data_dict
 
-def get_live_prices(limit=30, additional_symbols=None):
+def get_live_prices(limit=50, additional_symbols=None):
     """Fetch live prices for the top N USDT pairs plus any additionally specified symbols"""
     try:
         data = safe_binance_request("/api/v3/ticker/24hr")
