@@ -8,7 +8,7 @@ from sqlalchemy import text, inspect
 from typing import List
 
 import database, schemas
-from database import SessionLocal, Portfolio, get_db
+from database import SessionLocal, Portfolio
 import engine
 from agents import ai_agent
 from services import mt5_service
