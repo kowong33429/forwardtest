@@ -38,6 +38,8 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN initial_balance FLOAT DEFAULT 10000.0"))
             if 'execution_type' not in columns:
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN execution_type VARCHAR DEFAULT 'paper'"))
+            if 'algo_type' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN algo_type VARCHAR DEFAULT 'crypto'"))
                 
             # Migrate futures_positions
             if 'asset_class' not in fp_columns:
