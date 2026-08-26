@@ -13,7 +13,7 @@ from . import ai_agent_stock
 # For AI 1.2, we'll route to crypto for now as requested or keep it simple.
 # To keep this router fully compatible with engine.py, we also export necessary functions
 from .ai_agent_crypto import (
-    async_daily_optimization_worker, 
+    run_weekly_optimizer, 
     generate_trade_insight_core as crypto_generate_insight
 )
 
