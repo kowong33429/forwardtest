@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 import logging
 import json
 import numpy as np
-from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
+from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog, FuturesPosition, FuturesTrade
+from services import binance_service, mt5_service
+import inspect
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -24,7 +26,7 @@ def safe_dumps(data):
     return json.dumps(data, cls=NpEncoder)
 
 from algorithms import data_fetcher
-from ai_agent import generate_trade_insight_core, async_generate_trade_insight_worker
+from agents.ai_agent import generate_trade_insight_core, async_generate_trade_insight_worker
 import importlib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -90,19 +92,37 @@ def tick_engine(algo_name=None):
             positions = db.query(Position).filter(Position.portfolio_id == port.id).all()
             holding_symbols.extend([p.symbol for p in positions])
             # Also get futures positions
-            from database import FuturesPosition
             f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == port.id).all()
             holding_symbols.extend([p.symbol for p in f_positions])
             
         holding_symbols = list(set(holding_symbols))
         
-        logger.info(f"Step 1: Fetching current market data for Top 30 + {len(holding_symbols)} held symbols...")
-        market_data = data_fetcher.get_market_data(holding_symbols)
-        if not market_data:
+        logger.info(f"Step 1: Fetching current market data...")
+        market_data_by_type = {}
+        for port in active_portfolios:
+            algo_type = getattr(port, "algo_type", "crypto")
+            if algo_type not in market_data_by_type:
+                market_data_by_type[algo_type] = []
+                
+            positions = db.query(Position).filter(Position.portfolio_id == port.id).all()
+            market_data_by_type[algo_type].extend([p.symbol for p in positions])
+            
+            f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == port.id).all()
+            market_data_by_type[algo_type].extend([p.symbol for p in f_positions])
+
+        all_market_data = {}
+        for algo_type, symbols in market_data_by_type.items():
+            symbols = list(set(symbols))
+            data = data_fetcher.get_market_data(symbols, algo_type=algo_type)
+            if data:
+                all_market_data.update(data)
+                
+        if not all_market_data:
             logger.error("Failed to fetch market data. Aborting tick.")
             return
             
-        logger.info(f"Successfully fetched market data for {len(market_data)} symbols.")
+        logger.info(f"Successfully fetched market data for {len(all_market_data)} symbols.")
+        market_data = all_market_data
         
         for portfolio in active_portfolios:
             current_algo_name = portfolio.algorithm_name
@@ -161,8 +181,6 @@ def tick_engine(algo_name=None):
                             current_holdings.remove(pos.symbol)
             
             # 4. Get target allocations
-            from database import FuturesTrade
-            import inspect
             
             past_trades = db.query(FuturesTrade).filter(
                 FuturesTrade.portfolio_id == portfolio.id,
@@ -194,7 +212,6 @@ def tick_engine(algo_name=None):
             # 5. Execute Trades (Sells first to free up cash)
             logger.info(f"Step 4: Executing Trades for {current_algo_name}...")
             # Execute Trades for Futures and Spot
-            from database import FuturesPosition, FuturesTrade
             
             # Fetch futures positions
             f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
@@ -207,6 +224,12 @@ def tick_engine(algo_name=None):
                 
                 if current_price and target_weight <= 0:
                     profit_pct = ((current_price - pos.avg_entry_price) / pos.avg_entry_price) * 100
+                    
+                    if getattr(portfolio, 'execution_type', 'paper') == 'real':
+                        algo_type = getattr(portfolio, 'algo_type', 'crypto')
+                        if algo_type == 'crypto':
+                            binance_service.execute_trade(pos.symbol, "SELL", pos.amount)
+                            
                     portfolio.balance_usd += pos.amount * current_price
                     trade = Trade(portfolio_id=portfolio.id, symbol=pos.symbol, action="SELL", amount=pos.amount, price=current_price, profit_pct=profit_pct, reason=safe_dumps(symbol_reasons.get(pos.symbol)))
                     db.add(trade)
@@ -223,6 +246,15 @@ def tick_engine(algo_name=None):
                     if target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
                         profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
                         profit_usd = (f_pos.amount * current_price * (profit_pct/100)) # Simplified
+                        
+                        if getattr(portfolio, 'execution_type', 'paper') == 'real':
+                            algo_type = getattr(portfolio, 'algo_type', 'crypto')
+                            close_dir = "LONG" if f_pos.direction == "SHORT" else "SHORT"
+                            if algo_type == 'crypto':
+                                binance_service.execute_futures_trade(f_pos.symbol, close_dir, f_pos.amount)
+                            elif algo_type == 'forex':
+                                mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Close position")
+                                
                         portfolio.balance_usd += profit_usd
                         
                         f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=safe_dumps(symbol_reasons.get(f_pos.symbol)))
@@ -257,6 +289,14 @@ def tick_engine(algo_name=None):
                     f_pos = next((p for p in f_positions if p.symbol == sym), None)
                     if not f_pos:
                         direction = "LONG" if target_weight > 0 else "SHORT"
+                        
+                        if getattr(portfolio, 'execution_type', 'paper') == 'real':
+                            algo_type = getattr(portfolio, 'algo_type', 'crypto')
+                            if algo_type == 'crypto':
+                                binance_service.execute_futures_trade(sym, direction, buy_amount)
+                            elif algo_type == 'forex':
+                                mt5_service.execute_trade(sym, direction, buy_amount, sl=symbol_reasons.get(sym, {}).get("sl", 0), tp=symbol_reasons.get(sym, {}).get("tp", 0), comment="Open position")
+                                
                         new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=symbol_reasons.get(sym, {}).get("sl"), tp=symbol_reasons.get(sym, {}).get("tp"))
                         db.add(new_f_pos)
                         f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
@@ -267,6 +307,12 @@ def tick_engine(algo_name=None):
                     pos = next((p for p in positions if p.symbol == sym), None)
                     if not pos and portfolio.balance_usd >= target_usd * 0.99:
                         portfolio.balance_usd -= target_usd
+                        
+                        if getattr(portfolio, 'execution_type', 'paper') == 'real':
+                            algo_type = getattr(portfolio, 'algo_type', 'crypto')
+                            if algo_type == 'crypto':
+                                binance_service.execute_trade(sym, "LONG", buy_amount)
+                                
                         new_pos = Position(portfolio_id=portfolio.id, symbol=sym, amount=buy_amount, avg_entry_price=current_price)
                         db.add(new_pos)
                         trade = Trade(portfolio_id=portfolio.id, symbol=sym, action="BUY", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))

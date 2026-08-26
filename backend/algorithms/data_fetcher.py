@@ -4,6 +4,7 @@ import numpy as np
 import traceback
 import time
 import logging
+from services import mt5_service
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("DataFetcher")
@@ -76,8 +77,16 @@ def get_top_volume_symbols(limit=30):
         print(f"Error fetching symbols: {e}")
         return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"] # Fallback
 
-def fetch_klines(symbol, interval="4h", limit=250):
-    """Fetch recent OHLCV data for a symbol"""
+def fetch_klines(symbol, interval="4h", limit=250, algo_type="crypto"):
+    """Fetch recent OHLCV data for a symbol based on algo_type"""
+    if algo_type == "forex":
+
+        return mt5_service.fetch_historical_klines(symbol, timeframe=interval, limit=limit)
+    elif algo_type == "stock":
+        logger.warning("Stock data fetcher not implemented yet.")
+        return pd.DataFrame()
+        
+    # Default to crypto
     try:
         data = safe_binance_request(f"/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
         
@@ -102,15 +111,20 @@ def fetch_klines(symbol, interval="4h", limit=250):
         print(f"Error fetching klines for {symbol}: {e}")
         return None
 
-def get_market_data(additional_symbols=None):
-    """Returns a dictionary of DataFrames for the top 50 coins plus any additional symbols"""
-    symbols = set(get_top_volume_symbols(50))
+def get_market_data(additional_symbols=None, algo_type="crypto"):
+    """Returns a dictionary of DataFrames for symbols based on algo_type"""
+    if algo_type == "crypto":
+        symbols = set(get_top_volume_symbols(50))
+    else:
+        # For forex/stock, we might not have a "top volume" endpoint, just use portfolio symbols
+        symbols = set()
+        
     if additional_symbols:
         symbols.update(additional_symbols)
         
     data_dict = {}
     for sym in symbols:
-        df = fetch_klines(sym)
+        df = fetch_klines(sym, algo_type=algo_type)
         if df is not None and not df.empty:
             data_dict[sym] = df
     return data_dict

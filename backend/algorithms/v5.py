@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from backtester import run_backtest
 import requests
 import time
 import traceback
@@ -210,6 +211,6 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
     return targets, symbol_reasons
 
 if __name__ == "__main__":
-    from backtester import run_backtest
+
     final_balance = run_backtest(get_target_allocations, initial_balance=10000.0, days=1825)
     print(f"5-Year Backtest Finished. Final Balance: ${final_balance:.2f}")

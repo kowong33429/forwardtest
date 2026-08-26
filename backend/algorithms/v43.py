@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import os
+import sys
+from services import mt5_service
 import datetime
 import os
 from dotenv import load_dotenv
@@ -152,10 +155,10 @@ def get_ai_win_prob(history):
     else: return sum(history[-10:]) / len(history[-10:])
 
 def connect_mt5():
-    import sys
-    import os
+
+
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    import mt5_service
+
     return mt5_service.connect_mt5()
 
 def get_target_allocations_v43(data_dict, current_holdings=None, total_value=10000.0, live_execute=False, trade_history=None):
@@ -229,10 +232,10 @@ def get_target_allocations_v43(data_dict, current_holdings=None, total_value=100
         
         # If we want to execute live via MetaApi Cloud
         if live_execute:
-            import sys
-            import os
+        
+        
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            import mt5_service
+        
             
             volume = 0.1 # Should calculate properly based on balance
             result = mt5_service.execute_trade(

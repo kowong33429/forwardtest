@@ -3,6 +3,10 @@ from google import genai
 import requests
 import traceback
 import logging
+from database import SessionLocal, AIInsight, Trade, Portfolio, DailyOptimizationResult
+from algorithms.data_fetcher import fetch_klines
+from algorithms import backtester
+import importlib
 import time
 import threading
 import json
@@ -208,8 +212,8 @@ def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str,
     logger.info(f"AI 1.1 Worker started for trade_id {trade_id}")
     while True:
         try:
-            from database import SessionLocal, AIInsight, Trade
-            from algorithms.data_fetcher import fetch_klines
+
+
             
             db = SessionLocal()
             algo_source = ""
@@ -283,7 +287,7 @@ def async_weekly_optimizer_worker(portfolio_id: int):
     AI 1.2 Background Worker. Retries 3 times then falls back to flash.
     """
     logger.info(f"AI 1.2 Worker started for portfolio_id {portfolio_id}")
-    from database import SessionLocal, Trade, AIInsight, Portfolio, DailyOptimizationResult
+
     db = SessionLocal()
     
     try:
@@ -425,8 +429,8 @@ def ai_1_3_executor_core(db, portfolio, optimization_result: dict):
                 
             logger.info(f"AI 1.3: Generated new algo file: {new_file_name}")
             
-            import importlib
-            from algorithms import backtester
+
+
             
             module_name = f"algorithms.{new_file_name.replace('.py', '')}"
             algo_module = importlib.import_module(module_name)
@@ -436,7 +440,7 @@ def ai_1_3_executor_core(db, portfolio, optimization_result: dict):
             final_balance = backtester.run_backtest(new_algo_func, initial_balance=10000.0, days=730)
             
             if final_balance >= 15000.0:
-                from database import Portfolio
+
                 logger.info(f"AI 1.3: SUCCESS! Backtest passed with ${final_balance:.2f}. Registering {new_algo_name}...")
                 new_port = Portfolio(
                     algorithm_name=new_algo_name,

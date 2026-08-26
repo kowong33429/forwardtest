@@ -84,6 +84,9 @@ class PortfolioBase(BaseModel):
     is_ai_enabled: bool = True
     is_deleted: bool = False
     file_name: Optional[str] = None
+    trading_type: str = "spot"
+    algo_type: str = "crypto"
+    execution_type: str = "paper"
 
 class PortfolioResponse(PortfolioBase):
     id: int

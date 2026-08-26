@@ -4,14 +4,17 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import traceback
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from typing import List
 
 import database, schemas
-from database import SessionLocal
+from database import SessionLocal, Portfolio, get_db
+import engine
+from agents import ai_agent
+from services import mt5_service
+from algorithms import data_fetcher
+from apscheduler.schedulers.background import BackgroundScheduler
 from auth import auth_router, get_current_admin
-
-from sqlalchemy import inspect
 
 def migrate_db(engine):
     try:
@@ -63,13 +66,13 @@ def migrate_db(engine):
         print("Migration error:", e)
 
 def run_tick(algo_name=None):
-    import engine
+
     print(f"Scheduler running tick for {algo_name if algo_name else 'ALL'}...")
     engine.tick_engine(algo_name)
 
 def run_optimization():
-    import ai_agent
-    from database import SessionLocal, Portfolio
+
+
     print("Scheduler running weekly AI optimization...")
     db = SessionLocal()
     try:
@@ -81,7 +84,7 @@ def run_optimization():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from apscheduler.schedulers.background import BackgroundScheduler
+
     
     # Initialize DB schema
     migrate_db(database.engine)
@@ -161,7 +164,7 @@ def get_db():
 
 @app.get("/portfolios", response_model=List[schemas.PortfolioResponse])
 def read_portfolios(db: Session = Depends(get_db)):
-    import mt5_service
+
     portfolios = db.query(database.Portfolio).filter(database.Portfolio.is_deleted == 0).all()
     for p in portfolios:
         if getattr(p, 'execution_type', '') == 'real':
@@ -172,7 +175,7 @@ def read_portfolios(db: Session = Depends(get_db)):
 
 @app.get("/portfolios/{portfolio_id}", response_model=schemas.PortfolioResponse)
 def read_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
-    import mt5_service
+
     portfolio = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id, database.Portfolio.is_deleted == 0).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -250,13 +253,13 @@ def read_futures_trades(portfolio_id: int, page: int = 1, limit: int = 10, searc
 
 @app.post("/engine/tick")
 def force_tick(admin: str = Depends(get_current_admin)):
-    import engine
+
     engine.tick_engine()
     return {"status": "success", "message": "Engine tick triggered"}
 
 @app.post("/engine/optimize_now")
 def force_optimize(db: Session = Depends(get_db), admin: str = Depends(get_current_admin)):
-    import ai_agent
+
     portfolios = db.query(database.Portfolio).all()
     for p in portfolios:
         ai_agent.run_weekly_optimizer(p.id)
@@ -264,7 +267,7 @@ def force_optimize(db: Session = Depends(get_db), admin: str = Depends(get_curre
 
 @app.get("/market/prices")
 def get_prices(db: Session = Depends(get_db)):
-    from algorithms import data_fetcher
+
     all_positions = db.query(database.Position).all()
     holding_symbols = list(set([p.symbol for p in all_positions]))
     prices = data_fetcher.get_live_prices(limit=30, additional_symbols=holding_symbols)
@@ -276,7 +279,7 @@ def ping():
 
 @app.get("/api/mt5/health")
 def mt5_health_check(admin: str = Depends(get_current_admin)):
-    import mt5_service
+
     health = mt5_service.check_health()
     if health.get("status") == "error":
         print(f"Health Check Failed: {health.get('message')}")
@@ -296,5 +299,5 @@ def get_optimization_results(portfolio_id: int, db: Session = Depends(get_db)):
 
 # Entry point for running the server
 if __name__ == "__main__":
-    import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

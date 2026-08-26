@@ -30,6 +30,7 @@ class Portfolio(Base):
     is_deleted = Column(Integer, default=0)
     file_name = Column(String, nullable=True) 
     trading_type = Column(String, default="spot") # "spot" or "future"
+    algo_type = Column(String, default="crypto") # "crypto", "stock", "forex"
     execution_type = Column(String, default="paper") # "paper" or "real"
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
