@@ -26,7 +26,7 @@ def safe_dumps(data):
     return json.dumps(data, cls=NpEncoder)
 
 from algorithms import data_fetcher
-from agents.ai_agent import generate_trade_insight_core, async_generate_trade_insight_worker
+from agents.ai_agent import async_generate_trade_insight_worker
 import importlib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
