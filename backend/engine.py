@@ -5,7 +5,24 @@ import threading
 from datetime import datetime, timedelta
 import logging
 import json
+import numpy as np
 from database import SessionLocal, Portfolio, Position, Trade, AIInsight, EngineLog
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+def safe_dumps(data):
+    if data is None:
+        return None
+    return json.dumps(data, cls=NpEncoder)
+
 from algorithms import data_fetcher
 from ai_agent import generate_trade_insight_core, async_generate_trade_insight_worker
 import importlib
@@ -169,7 +186,7 @@ def tick_engine(algo_name=None):
             # Save Engine Log for calculation process
             engine_log = EngineLog(
                 portfolio_id=portfolio.id,
-                logs_json=json.dumps(symbol_reasons)
+                logs_json=safe_dumps(symbol_reasons)
             )
             db.add(engine_log)
             db.commit()
@@ -182,31 +199,33 @@ def tick_engine(algo_name=None):
             # Fetch futures positions
             f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
             
-            # First, close out any positions (Spot or Futures) where target is 0 or opposite direction
-            for sym, target_weight in targets.items():
-                current_price = current_prices.get(sym)
-                if not current_price: continue
+            # First, close out any positions (Spot or Futures) where target is 0 or opposite direction or fell out of targets
+            # Spot Closure (Legacy)
+            for pos in positions[:]:
+                target_weight = targets.get(pos.symbol, 0.0)
+                current_price = current_prices.get(pos.symbol)
                 
-                # Spot Closure (Legacy)
-                pos = next((p for p in positions if p.symbol == sym), None)
-                if pos and target_weight <= 0:
+                if current_price and target_weight <= 0:
                     profit_pct = ((current_price - pos.avg_entry_price) / pos.avg_entry_price) * 100
                     portfolio.balance_usd += pos.amount * current_price
-                    trade = Trade(portfolio_id=portfolio.id, symbol=sym, action="SELL", amount=pos.amount, price=current_price, profit_pct=profit_pct, reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None)
+                    trade = Trade(portfolio_id=portfolio.id, symbol=pos.symbol, action="SELL", amount=pos.amount, price=current_price, profit_pct=profit_pct, reason=safe_dumps(symbol_reasons.get(pos.symbol)))
                     db.add(trade)
                     db.delete(pos)
                     db.commit()
+            
+            # Futures Closure
+            for f_pos in f_positions[:]:
+                target_weight = targets.get(f_pos.symbol, 0.0)
+                current_price = current_prices.get(f_pos.symbol)
                 
-                # Futures Closure
-                f_pos = next((p for p in f_positions if p.symbol == sym), None)
-                if f_pos:
+                if current_price:
                     # If target is 0, or we need to flip direction
                     if target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
                         profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
                         profit_usd = (f_pos.amount * current_price * (profit_pct/100)) # Simplified
                         portfolio.balance_usd += profit_usd
                         
-                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None)
+                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=safe_dumps(symbol_reasons.get(f_pos.symbol)))
                         db.add(f_trade)
                         db.commit()
                         db.refresh(f_trade)
@@ -215,7 +234,7 @@ def tick_engine(algo_name=None):
                         if getattr(portfolio, 'is_ai_enabled', 1):
                             threading.Thread(
                                 target=async_generate_trade_insight_worker, 
-                                args=(f_trade.id, sym, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name)
+                                args=(f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name)
                             ).start()
                             
                         db.delete(f_pos)
@@ -240,7 +259,7 @@ def tick_engine(algo_name=None):
                         direction = "LONG" if target_weight > 0 else "SHORT"
                         new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=symbol_reasons.get(sym, {}).get("sl"), tp=symbol_reasons.get(sym, {}).get("tp"))
                         db.add(new_f_pos)
-                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None)
+                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
                         db.add(f_trade)
                         db.commit()
                 else:
@@ -250,7 +269,7 @@ def tick_engine(algo_name=None):
                         portfolio.balance_usd -= target_usd
                         new_pos = Position(portfolio_id=portfolio.id, symbol=sym, amount=buy_amount, avg_entry_price=current_price)
                         db.add(new_pos)
-                        trade = Trade(portfolio_id=portfolio.id, symbol=sym, action="BUY", amount=buy_amount, price=current_price, reason=json.dumps(symbol_reasons.get(sym)) if sym in symbol_reasons else None)
+                        trade = Trade(portfolio_id=portfolio.id, symbol=sym, action="BUY", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
                         db.add(trade)
                         db.commit()
                         
