@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from backtester import run_backtest
 import requests
 import time
 import traceback

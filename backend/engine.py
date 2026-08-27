@@ -149,7 +149,7 @@ def tick_engine(algo_name=None):
             total_value = portfolio.balance_usd
             current_prices = {}
             for sym, df in market_data.items():
-                current_prices[sym] = df['close'].iloc[-1]
+                current_prices[sym] = float(df['close'].iloc[-1])
                 
             for pos in positions:
                 if pos.symbol in current_prices:
