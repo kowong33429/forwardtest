@@ -6,6 +6,7 @@ import traceback
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text, inspect
 from typing import List
+import uvicorn
 
 import database, schemas
 from database import SessionLocal, Portfolio

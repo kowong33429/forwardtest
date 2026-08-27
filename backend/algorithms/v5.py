@@ -4,6 +4,7 @@ import requests
 import time
 import traceback
 import pandas_ta as ta
+from backtester import run_backtest
 
 # --- System Constants for CMC ---
 CMC_API_KEY = '5546f69e0fcd426bafd5f2d892673cc6'
