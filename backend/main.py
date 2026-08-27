@@ -166,25 +166,14 @@ def get_db():
 
 @app.get("/portfolios", response_model=List[schemas.PortfolioResponse])
 def read_portfolios(db: Session = Depends(get_db)):
-
     portfolios = db.query(database.Portfolio).filter(database.Portfolio.is_deleted == 0).all()
-    for p in portfolios:
-        if getattr(p, 'execution_type', '') == 'real':
-            health = mt5_service.check_health()
-            if health.get("status") == "connected" and health.get("balance") is not None:
-                p.balance_usd = health.get("balance")
     return portfolios
 
 @app.get("/portfolios/{portfolio_id}", response_model=schemas.PortfolioResponse)
 def read_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
-
     portfolio = db.query(database.Portfolio).filter(database.Portfolio.id == portfolio_id, database.Portfolio.is_deleted == 0).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    if getattr(portfolio, 'execution_type', '') == 'real':
-        health = mt5_service.check_health()
-        if health.get("status") == "connected" and health.get("balance") is not None:
-            portfolio.balance_usd = health.get("balance")
     return portfolio
 
 @app.post("/portfolios/{portfolio_id}/toggle_hide")

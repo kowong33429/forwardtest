@@ -17,14 +17,23 @@ BINANCE_BASE_URLS = [
     "https://api.binance.com"
 ]
 
+_best_binance_url = None
+
 def safe_binance_request(endpoint):
     """
     Tries multiple Binance base URLs until one succeeds.
     Useful for bypassing geo-blocks on cloud servers.
     """
+    global _best_binance_url
     logger.info(f"Initiating Binance API call for endpoint: {endpoint}")
     last_error = None
-    for base_url in BINANCE_BASE_URLS:
+    
+    urls_to_try = BINANCE_BASE_URLS.copy()
+    if _best_binance_url and _best_binance_url in urls_to_try:
+        urls_to_try.remove(_best_binance_url)
+        urls_to_try.insert(0, _best_binance_url)
+        
+    for base_url in urls_to_try:
         url = f"{base_url}{endpoint}"
         logger.info(f"Attempting GET {url}")
         try:
@@ -40,6 +49,7 @@ def safe_binance_request(endpoint):
                         logger.warning(f"Geo-blocked at {url}: {data.get('msg')}")
                         continue # Try next URL
                 logger.info(f"Successfully fetched data from {url}. Payload size: {len(str(data))} characters.")
+                _best_binance_url = base_url
                 return data
             else:
                 logger.warning(f"Failed with status {response.status_code} at {url}: {response.text[:100]}")
