@@ -108,8 +108,9 @@ export default function Home() {
   useEffect(() => {
     fetchPortfolios();
     fetchPrices();
-    const portInterval = setInterval(fetchPortfolios, 5000);
-    const priceInterval = setInterval(fetchPrices, 3000);
+    // Increased interval for mobile performance
+    const portInterval = setInterval(fetchPortfolios, 15000);
+    const priceInterval = setInterval(fetchPrices, 10000);
     return () => {
       clearInterval(portInterval);
       clearInterval(priceInterval);

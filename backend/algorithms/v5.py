@@ -4,8 +4,6 @@ import requests
 import time
 import traceback
 import pandas_ta as ta
-from backtester import run_backtest
-
 # --- System Constants for CMC ---
 CMC_API_KEY = '5546f69e0fcd426bafd5f2d892673cc6'
 
@@ -209,8 +207,3 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
             }
             
     return targets, symbol_reasons
-
-if __name__ == "__main__":
-
-    final_balance = run_backtest(get_target_allocations, initial_balance=10000.0, days=1825)
-    print(f"5-Year Backtest Finished. Final Balance: ${final_balance:.2f}")

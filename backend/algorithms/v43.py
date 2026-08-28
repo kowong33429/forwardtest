@@ -23,7 +23,7 @@ def calculate_atr(df, period=14):
     atr = true_range.rolling(period).mean()
     return atr
 
-def get_target_allocations(data_dict, symbol='XAUUSDc'):
+def _get_target_allocations_internal(data_dict, symbol='XAUUSDc'):
     """
     V25: Dynamic Kelly (Probabilistic Confidence)
     Calculates Confidence (C) from 0.0 to 1.0 based on HMM Probability and Kalman Momentum.
@@ -155,13 +155,10 @@ def get_ai_win_prob(history):
     else: return sum(history[-10:]) / len(history[-10:])
 
 def connect_mt5():
-
-
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
     return mt5_service.connect_mt5()
 
-def get_target_allocations_v43(data_dict, current_holdings=None, total_value=10000.0, live_execute=False, trade_history=None):
+def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0, live_execute=False, trade_history=None):
     """
     V43 The Whipsaw Killer (Daily)
     Support Future Trading / Exness Cent connection if live_execute=True
@@ -181,7 +178,7 @@ def get_target_allocations_v43(data_dict, current_holdings=None, total_value=100
     df['chop'] = calc_chop(df, 14)
     
     # Run core HMM/Kalman
-    state = get_target_allocations({symbol: df}, symbol=symbol)
+    state = _get_target_allocations_internal({symbol: df}, symbol=symbol)
     
     chop_val = get_1d(df['chop']).iloc[-1]
     
