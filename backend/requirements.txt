@@ -8,9 +8,9 @@ schedule==1.2.1
 python-dotenv==1.0.1
 psycopg2-binary==2.9.9
 apscheduler==3.10.4
-pandas==2.2.2
-numpy==1.26.4
-scipy==1.13.1
+pandas>=2.2.2
+numpy>=1.26.4
+scipy>=1.13.1
 PyJWT>=2.8.0
 hmmlearn>=0.3.0
 pykalman>=0.9.5
