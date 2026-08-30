@@ -100,19 +100,32 @@ async def lifespan(app: FastAPI):
             "V5.0 Low-Cap Sniper": {"desc": "Targets breakout Low-Cap gems (10M-300M Market Cap) on 4H candles with strict fundamental filters.", "file": "v5.py", "exec": "paper"},
             "V5.1 God Mode": {"desc": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns.", "file": "v5_1.py", "exec": "paper"},
             "V9 Kinetic God": {"desc": "Production Quantitative Scanner using Kinetic Energy Math, Calculus Deceleration, and dynamic Z-scores.", "file": "algo_v9_kinetic_god.py", "exec": "paper"},
-            "V43 Whipsaw Killer": {"desc": "The ultimate Gold Future AI using HMM and Kalman Filter with CHOP indicator to avoid fractal consolidations. Supports Exness MT5 Cent account.", "file": "v43.py", "exec": "real"}
+            "V43 Whipsaw Killer": {"desc": "The ultimate Gold Future AI using HMM and Kalman Filter with CHOP indicator to avoid fractal consolidations. Supports Exness MT5 Cent account.", "file": "v43.py", "exec": "real", "algo_type": "forex", "trading_type": "future"}
         }
         for name, data in algos.items():
             port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()
             if not port:
-                port = database.Portfolio(algorithm_name=name, balance_usd=10000.0, initial_balance=10000.0, description=data["desc"], file_name=data["file"], execution_type=data["exec"])
+                port = database.Portfolio(
+                    algorithm_name=name, 
+                    balance_usd=10000.0, 
+                    initial_balance=10000.0, 
+                    description=data["desc"], 
+                    file_name=data["file"], 
+                    execution_type=data["exec"],
+                    algo_type=data.get("algo_type", "crypto"),
+                    trading_type=data.get("trading_type", "spot")
+                )
                 db.add(port)
             else:
                 port.description = data["desc"]
-                if not port.file_name:
+                if "file" in data:
                     port.file_name = data["file"]
-                if not getattr(port, 'execution_type', None):
+                if "exec" in data:
                     port.execution_type = data["exec"]
+                if "algo_type" in data:
+                    port.algo_type = data["algo_type"]
+                if "trading_type" in data:
+                    port.trading_type = data["trading_type"]
         db.commit()
     except Exception as e:
         print(f"Error initializing portfolios: {e}")

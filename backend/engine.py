@@ -130,6 +130,19 @@ def tick_engine(algo_name=None):
                 logger.warning(f"Portfolio {current_algo_name} has no file_name. Skipping.")
                 continue
             
+            algo_type = getattr(portfolio, 'algo_type', 'crypto')
+            if algo_type == 'forex':
+                is_open, close_reason = mt5_service.is_forex_market_open()
+                if not is_open:
+                    logger.info(f"Skipping {current_algo_name}: {close_reason}")
+                    engine_log = EngineLog(
+                        portfolio_id=portfolio.id,
+                        logs_json=safe_dumps({"SYSTEM": {"decision_logic": close_reason}})
+                    )
+                    db.add(engine_log)
+                    db.commit()
+                    continue
+            
             try:
                 module_name = f"algorithms.{portfolio.file_name.replace('.py', '')}"
                 algo_module = importlib.import_module(module_name)

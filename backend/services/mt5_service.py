@@ -144,3 +144,46 @@ def fetch_historical_klines(symbol, timeframe="4h", limit=250):
     """
     return execute_sync(_fetch_historical_klines_async(symbol, timeframe, limit))
 
+async def _check_market_metaapi_async(symbol):
+    try:
+        connection = await _get_connection()
+        
+        # You can fetch the symbol specification
+        spec = await connection.get_symbol_specification(symbol)
+        
+        # Usually brokers will set tradeMode to 0 (SYMBOL_TRADE_MODE_DISABLED) during holidays or unexpected closures
+        if hasattr(spec, 'tradeMode') and spec.tradeMode == 0:
+            return False, f"MARKET CLOSED: Trading is disabled for {symbol} by broker."
+            
+        return True, "Market is open."
+    except Exception as e:
+        logger.error(f"MetaApi market check failed for {symbol}: {e}")
+        # If API fails (e.g. timeout), we fallback to allowing it so the engine doesn't completely halt on API lag
+        return True, "Market is open (MetaApi check failed/timeout)."
+
+def is_forex_market_open(symbol="XAUUSDc"):
+    """
+    Hybrid Check:
+    1. Check if the Forex market is open based on US/Eastern timezone (Weekend check).
+    2. Check MetaApi for specific broker holiday closures.
+    Returns: (bool, str) - (is_open, reason)
+    """
+    try:
+        import zoneinfo
+        eastern = zoneinfo.ZoneInfo("US/Eastern")
+    except ImportError:
+        import pytz
+        eastern = pytz.timezone("US/Eastern")
+        
+    now = datetime.now(eastern)
+    
+    # 1. Fast Local Timezone Check (Weekend)
+    if now.weekday() == 4 and now.hour >= 17:
+        return False, "MARKET CLOSED: Forex market closes on Friday at 5:00 PM EST."
+    elif now.weekday() == 5:
+        return False, "MARKET CLOSED: Forex market is closed on Saturday."
+    elif now.weekday() == 6 and now.hour < 17:
+        return False, "MARKET CLOSED: Forex market opens on Sunday at 5:00 PM EST."
+        
+    # 2. MetaApi Check (Holidays / Broker closures)
+    return execute_sync(_check_market_metaapi_async(symbol))

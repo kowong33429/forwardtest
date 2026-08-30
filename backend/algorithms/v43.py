@@ -167,11 +167,11 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
     targets = {}
     
     symbol = "XAUUSDc" # Exness Cent Gold
+    
     if symbol not in data_dict:
-        # Fallback to standard if missing
-        symbol = list(data_dict.keys())[0] if data_dict else "XAUUSDc"
+        raise ValueError(f"Symbol '{symbol}' not found in data_dict. Please check if data_fetcher correctly fetched data and Portfolio algo_type is 'forex'.")
         
-    if symbol not in data_dict or len(data_dict[symbol]) < 130:
+    if len(data_dict[symbol]) < 130:
         return {}, symbol_reasons
         
     df = data_dict[symbol].copy()
