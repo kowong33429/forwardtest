@@ -68,8 +68,15 @@ def analyze_4h_technicals(df_ohlcv):
     df_ohlcv = df_ohlcv.dropna()
     if df_ohlcv.empty: return 0, 50, 0
 
-    latest = df_ohlcv.iloc[-1]
-    prev_high = df_ohlcv['high'].iloc[-2] if len(df_ohlcv) >= 2 else df_ohlcv['high'].iloc[-1]
+    # Ensure we use the last CLOSED candle.
+    # If the script runs exactly on the hour, the last candle (iloc[-1]) is a brand new, incomplete candle.
+    current_time_ms = time.time() * 1000
+    if float(df_ohlcv['close_time'].iloc[-1]) > current_time_ms and len(df_ohlcv) >= 3:
+        latest = df_ohlcv.iloc[-2]
+        prev_high = df_ohlcv['high'].iloc[-3]
+    else:
+        latest = df_ohlcv.iloc[-1]
+        prev_high = df_ohlcv['high'].iloc[-2] if len(df_ohlcv) >= 2 else df_ohlcv['high'].iloc[-1]
     
     is_bullish_cross = latest['EMA_9'] > latest['EMA_20']
     is_vol_anomaly = latest['volume'] > (latest['Vol_SMA_20'] * 1.5)
