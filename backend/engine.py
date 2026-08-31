@@ -189,9 +189,58 @@ def tick_engine(algo_name=None):
                         db.delete(pos)
                         db.commit()
                         
+                        # TRIGGER AI INSIGHT
+                        if getattr(portfolio, 'is_ai_enabled', 1):
+                            threading.Thread(
+                                target=async_generate_trade_insight_worker, 
+                                args=(trade.id, pos.symbol, "SELL", gain_pct*100, pos.avg_entry_price, current_price, current_algo_name)
+                            ).start()
+                        
                         positions.remove(pos)
                         if pos.symbol in current_holdings:
                             current_holdings.remove(pos.symbol)
+            # 3.6. Execute pending Stop Loss & Take Profit for Futures (Paper Trading Simulation)
+            f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
+            for f_pos in f_positions[:]:
+                if f_pos.symbol in current_prices:
+                    current_price = current_prices[f_pos.symbol]
+                    close_reason = None
+                    
+                    if f_pos.direction == "LONG":
+                        if f_pos.sl and current_price <= f_pos.sl:
+                            close_reason = "STOP LOSS"
+                        elif f_pos.tp and current_price >= f_pos.tp:
+                            close_reason = "TAKE PROFIT"
+                    else: # SHORT
+                        if f_pos.sl and current_price >= f_pos.sl:
+                            close_reason = "STOP LOSS"
+                        elif f_pos.tp and current_price <= f_pos.tp:
+                            close_reason = "TAKE PROFIT"
+                            
+                    if close_reason:
+                        profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
+                        logger.info(f"  Futures {close_reason} ({profit_pct:.1f}%) triggered for {f_pos.symbol} at {current_price:.4f}")
+                        
+                        profit_usd = f_pos.amount * (current_price - f_pos.avg_entry_price) if f_pos.direction == "LONG" else f_pos.amount * (f_pos.avg_entry_price - current_price)
+                        portfolio.balance_usd += profit_usd
+                        
+                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=f"{close_reason} ({profit_pct:.1f}%)")
+                        db.add(f_trade)
+                        db.commit()
+                        db.refresh(f_trade)
+                        
+                        # TRIGGER AI INSIGHT
+                        if getattr(portfolio, 'is_ai_enabled', 1):
+                            threading.Thread(
+                                target=async_generate_trade_insight_worker, 
+                                args=(f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name)
+                            ).start()
+                            
+                        db.delete(f_pos)
+                        db.commit()
+                        f_positions.remove(f_pos)
+                        if f_pos.symbol in current_holdings:
+                            current_holdings.remove(f_pos.symbol)
             
             # 4. Get target allocations
             
@@ -248,6 +297,13 @@ def tick_engine(algo_name=None):
                     db.add(trade)
                     db.delete(pos)
                     db.commit()
+                    
+                    # TRIGGER AI INSIGHT
+                    if getattr(portfolio, 'is_ai_enabled', 1):
+                        threading.Thread(
+                            target=async_generate_trade_insight_worker, 
+                            args=(trade.id, pos.symbol, "SELL", profit_pct, pos.avg_entry_price, current_price, current_algo_name)
+                        ).start()
             
             # Futures Closure
             for f_pos in f_positions[:]:

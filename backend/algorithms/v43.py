@@ -227,27 +227,7 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
             "state_confidence": state['confidence']
         }
         
-        # If we want to execute live via MetaApi Cloud
-        if live_execute:
-        
-        
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-            
-            volume = 0.1 # Should calculate properly based on balance
-            result = mt5_service.execute_trade(
-                symbol=symbol,
-                direction=direction,
-                volume=volume,
-                sl=sl_price,
-                tp=tp_price,
-                comment="V43 Whipsaw Killer"
-            )
-            
-            if result.get("status") == "success":
-                symbol_reasons[symbol]["ticket"] = result.get("ticket")
-            else:
-                print(f"Order failed: {result.get('message')}")
+
             
     else:
         symbol_reasons[symbol] = {
