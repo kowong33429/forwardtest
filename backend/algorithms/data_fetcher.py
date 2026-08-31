@@ -125,8 +125,10 @@ def get_market_data(additional_symbols=None, algo_type="crypto"):
     """Returns a dictionary of DataFrames for symbols based on algo_type"""
     if algo_type == "crypto":
         symbols = set(get_top_volume_symbols(50))
+    elif algo_type == "forex":
+        symbols = {"XAUUSDc", "EURUSDc", "GBPUSDc", "USDJPYc"}
     else:
-        # For forex/stock, we might not have a "top volume" endpoint, just use portfolio symbols
+        # For stock, we might not have a "top volume" endpoint, just use portfolio symbols
         symbols = set()
         
     if additional_symbols:

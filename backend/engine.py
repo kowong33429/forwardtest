@@ -258,7 +258,7 @@ def tick_engine(algo_name=None):
                     # If target is 0, or we need to flip direction
                     if target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
                         profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
-                        profit_usd = (f_pos.amount * current_price * (profit_pct/100)) # Simplified
+                        profit_usd = f_pos.amount * (current_price - f_pos.avg_entry_price) if f_pos.direction == "LONG" else f_pos.amount * (f_pos.avg_entry_price - current_price)
                         
                         if getattr(portfolio, 'execution_type', 'paper') == 'real':
                             algo_type = getattr(portfolio, 'algo_type', 'crypto')
