@@ -81,7 +81,7 @@ def run_optimization():
     try:
         portfolios = db.query(Portfolio).all()
         for p in portfolios:
-            ai_agent.run_weekly_optimizer(db, p.id)
+            ai_agent.run_weekly_optimizer(p.id)
     finally:
         db.close()
 

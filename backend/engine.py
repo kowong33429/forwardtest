@@ -281,7 +281,7 @@ def tick_engine(algo_name=None):
             # First, close out any positions (Spot or Futures) where target is 0 or opposite direction or fell out of targets
             # Spot Closure (Legacy)
             for pos in positions[:]:
-                target_weight = targets.get(pos.symbol, 0.0)
+                target_weight = float(targets.get(pos.symbol, 0.0))
                 current_price = current_prices.get(pos.symbol)
                 
                 if current_price and target_weight <= 0:
@@ -307,7 +307,7 @@ def tick_engine(algo_name=None):
             
             # Futures Closure
             for f_pos in f_positions[:]:
-                target_weight = targets.get(f_pos.symbol, 0.0)
+                target_weight = float(targets.get(f_pos.symbol, 0.0))
                 current_price = current_prices.get(f_pos.symbol)
                 
                 if current_price:
@@ -344,6 +344,7 @@ def tick_engine(algo_name=None):
 
             # Next, open new positions
             for sym, target_weight in targets.items():
+                target_weight = float(target_weight)
                 current_price = current_prices.get(sym)
                 if not current_price and sym in symbol_reasons and 'price' in symbol_reasons[sym]:
                     current_price = symbol_reasons[sym]['price']
