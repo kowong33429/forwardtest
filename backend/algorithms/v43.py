@@ -28,7 +28,10 @@ def _get_target_allocations_internal(data_dict, symbol='XAUUSDc'):
     V25: Dynamic Kelly (Probabilistic Confidence)
     Calculates Confidence (C) from 0.0 to 1.0 based on HMM Probability and Kalman Momentum.
     """
-    if symbol not in data_dict or len(data_dict[symbol]) < 100:
+    if symbol not in data_dict:
+        return None
+        
+    if len(data_dict[symbol]) < 100:
         return None
         
     df = data_dict[symbol].copy()
@@ -169,9 +172,11 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
     symbol = "XAUUSDc" # Exness Cent Gold
     
     if symbol not in data_dict:
-        raise ValueError(f"Symbol '{symbol}' not found in data_dict. Please check if data_fetcher correctly fetched data and Portfolio algo_type is 'forex'.")
+        symbol_reasons[symbol] = {"decision_logic": f"ERROR: '{symbol}' not found in data_dict."}
+        return {}, symbol_reasons
         
     if len(data_dict[symbol]) < 130:
+        symbol_reasons[symbol] = {"decision_logic": f"ERROR: Not enough data for {symbol}. Need 130, got {len(data_dict[symbol])}"}
         return {}, symbol_reasons
         
     df = data_dict[symbol].copy()

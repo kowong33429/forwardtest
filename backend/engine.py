@@ -27,10 +27,12 @@ def safe_dumps(data):
 
 from algorithms import data_fetcher
 from agents.ai_agent import async_generate_trade_insight_worker
+from agents.ai_agent import async_generate_trade_insight_worker
 import importlib
+from logger_setup import setup_logger, set_trace_id
+import uuid
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("TradingEngine")
+logger = setup_logger("TradingEngine")
 
 # Global lock dictionary to prevent race conditions per algorithm
 engine_locks = {}
@@ -71,6 +73,8 @@ def tick_engine(algo_name=None):
     if not algo_lock.acquire(blocking=False):
         logger.warning(f"Engine tick for {lock_key} is already running. Skipping this concurrent tick request.")
         return
+        
+    set_trace_id(f"Tick-{algo_name.replace(' ', '') if algo_name else 'ALL'}-{str(uuid.uuid4())[:6]}")
         
     db = SessionLocal()
     try:

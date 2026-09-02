@@ -12,8 +12,10 @@ import threading
 import json
 from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("AIAgent")
+from logger_setup import setup_logger, set_trace_id
+import uuid
+
+logger = setup_logger("AIAgent")
 
 def fetch_crypto_news():
     try:
@@ -202,6 +204,8 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
     elif text.startswith("```"):
         text = text[3:-3]
         
+    import re
+    text = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', text)
     result = json.loads(text.strip())
     return result
 
@@ -209,6 +213,7 @@ def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str,
     """
     AI 1.1 Background Worker. Infinite retry every 10 mins until successful.
     """
+    set_trace_id(f"AIWorker-{trade_id}-{str(uuid.uuid4())[:4]}")
     logger.info(f"AI 1.1 Worker started for trade_id {trade_id}")
     while True:
         try:
@@ -286,6 +291,7 @@ def async_weekly_optimizer_worker(portfolio_id: int):
     """
     AI 1.2 Background Worker. Retries 3 times then falls back to flash.
     """
+    set_trace_id(f"AIOptimizer-{portfolio_id}-{str(uuid.uuid4())[:4]}")
     logger.info(f"AI 1.2 Worker started for portfolio_id {portfolio_id}")
 
     db = SessionLocal()
@@ -352,6 +358,8 @@ def async_weekly_optimizer_worker(portfolio_id: int):
             elif text.startswith("```"):
                 text = text[3:-3]
                 
+            import re
+            text = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', text)
             result = json.loads(text.strip())
             
             needs_tuning = 1 if result.get("needs_tuning", False) else 0

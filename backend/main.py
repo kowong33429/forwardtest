@@ -16,6 +16,10 @@ from services import mt5_service
 from algorithms import data_fetcher
 from apscheduler.schedulers.background import BackgroundScheduler
 from auth import auth_router, get_current_admin
+from logger_setup import setup_logger, set_trace_id
+import uuid
+
+logger = setup_logger("FastAPI")
 
 def migrate_db(engine):
     try:
@@ -167,6 +171,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def trace_id_middleware(request: Request, call_next):
+    trace_id = f"Req-{str(uuid.uuid4())[:6]}"
+    set_trace_id(trace_id)
+    response = await call_next(request)
+    response.headers["X-Trace-ID"] = trace_id
+    return response
 
 app.include_router(auth_router)
 

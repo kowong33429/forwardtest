@@ -110,31 +110,51 @@ def execute_trade(symbol, direction, volume, sl, tp, comment="ForwardTest AI"):
 async def _fetch_historical_klines_async(symbol, timeframe="4h", limit=250):
     try:
         connection = await _get_connection()
-        # MetaApi Python SDK usually uses `get_historical_candles` but syntax can vary
-        # (e.g. timeframe formats like '4h' or 'h4'). 
-        # For now we provide a mock or simple implementation. 
-        # If real historical data is needed, we may need MetaApi's HistoricalMarketDataApi.
+        # Ensure timeframe is formatted correctly for MetaApi (e.g., '1h', '4h', '1d')
+        # MetaApi Python SDK usually uses `get_history_storage().get_historical_candles()` or `connection.get_historical_candles()`
+        # We will try the direct connection method.
         
-        # Placeholder for real fetch:
-        # candles = await connection.get_historical_candles(symbol, timeframe, limit=limit)
+        # In MetaApi, timeframes are typically '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1mn'
+        mt5_timeframe = timeframe
+        if timeframe == "1d":
+            mt5_timeframe = "1d"
+            
+        logger.info(f"Fetching {limit} historical candles for {symbol} ({mt5_timeframe}) via MetaApi...")
+        candles = await connection.get_historical_candles(symbol, mt5_timeframe, None, limit)
         
-        # We will return dummy dataframe format so engine can run
+        if not candles:
+            logger.warning(f"MetaApi returned no historical candles for {symbol}.")
+            return None
+            
+        # Convert to DataFrame matching expected format
+        df = pd.DataFrame(candles)
+        # Rename columns if necessary. MetaApi usually returns: time, open, high, low, close, tickVolume
+        if 'time' in df.columns:
+            df['close_time'] = pd.to_datetime(df['time'])
+            df.set_index('close_time', inplace=True)
+            
+        # Ensure standard column names
+        for col in ['open', 'high', 'low', 'close']:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+                
+        # Map tickVolume to volume
+        if 'tickVolume' in df.columns and 'volume' not in df.columns:
+            df['volume'] = df['tickVolume'].astype(float)
+        elif 'volume' not in df.columns:
+            df['volume'] = 0.0
+            
+        return df[['open', 'high', 'low', 'close', 'volume']]
         
-        logger.warning(f"Returning dummy historical data for forex {symbol} via MetaApi.")
-        dates = [datetime.utcnow() - timedelta(hours=4*i) for i in range(limit)]
-        dates.reverse()
-        
-        df = pd.DataFrame({
-            'open': np.random.uniform(1.0, 1.1, limit),
-            'high': np.random.uniform(1.1, 1.2, limit),
-            'low': np.random.uniform(0.9, 1.0, limit),
-            'close': np.random.uniform(1.0, 1.1, limit),
-            'volume': np.random.uniform(100, 1000, limit)
-        }, index=dates)
-        
-        return df
     except Exception as e:
-        logger.error(f"Failed to fetch historical klines via MetaApi: {e}")
+        logger.error(f"Failed to fetch historical klines via MetaApi for {symbol}: {e}")
+        error_msg = str(e).lower()
+        if "not connected to broker" in error_msg or "timeout" in error_msg:
+            logger.critical("ACTION REQUIRED: Your MetaApi account is NOT connected to the broker (e.g. Exness). Please go to the MetaApi dashboard and check your MT5 server, login, and password!")
+        
+        # Reset connection so it can attempt to reconnect later
+        global _connection
+        _connection = None
         return None
 
 def fetch_historical_klines(symbol, timeframe="4h", limit=250):
@@ -158,7 +178,12 @@ async def _check_market_metaapi_async(symbol):
         return True, "Market is open."
     except Exception as e:
         logger.error(f"MetaApi market check failed for {symbol}: {e}")
-        # If API fails (e.g. timeout), we fallback to allowing it so the engine doesn't completely halt on API lag
+        error_msg = str(e).lower()
+        if "not connected to broker" in error_msg or "timeout" in error_msg:
+            logger.critical("ACTION REQUIRED: Your MetaApi account is NOT connected to the broker (e.g. Exness). Please go to the MetaApi dashboard and check your MT5 server, login, and password!")
+            
+        # If API fails (e.g. timeout), we fallback to allowing it so the engine doesn't completely halt on API lag,
+        # but the subsequent historical data fetch will likely fail anyway.
         return True, "Market is open (MetaApi check failed/timeout)."
 
 def is_forex_market_open(symbol="XAUUSDc"):

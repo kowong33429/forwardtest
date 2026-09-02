@@ -2,7 +2,10 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def get_bkk_time():
+    return datetime.now(timezone(timedelta(hours=7))).replace(tzinfo=None)
 
 load_dotenv()
 
@@ -32,8 +35,8 @@ class Portfolio(Base):
     trading_type = Column(String, default="spot") # "spot" or "future"
     algo_type = Column(String, default="crypto") # "crypto", "stock", "forex"
     execution_type = Column(String, default="paper") # "paper" or "real"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_bkk_time)
+    updated_at = Column(DateTime, default=get_bkk_time, onupdate=get_bkk_time)
     
     trades = relationship("Trade", back_populates="portfolio")
     positions = relationship("Position", back_populates="portfolio")
@@ -58,7 +61,7 @@ class Trade(Base):
     action = Column(String) 
     amount = Column(Float)
     price = Column(Float)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_bkk_time)
     profit_pct = Column(Float, nullable=True) 
     reason = Column(String, nullable=True) 
     
@@ -94,7 +97,7 @@ class FuturesTrade(Base):
     action = Column(String) # OPEN or CLOSE
     amount = Column(Float)
     price = Column(Float)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_bkk_time)
     profit_pct = Column(Float, nullable=True) 
     profit_usd = Column(Float, nullable=True)
     asset_class = Column(String, nullable=True)
@@ -115,7 +118,7 @@ class AIInsight(Base):
     summary = Column(String)
     macro_context = Column(String)
     lessons_learned = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_bkk_time)
     
     trade = relationship("Trade", back_populates="insight")
 
@@ -126,7 +129,7 @@ class FuturesAIInsight(Base):
     summary = Column(String)
     macro_context = Column(String)
     lessons_learned = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_bkk_time)
     
     trade = relationship("FuturesTrade", back_populates="insight")
 
@@ -134,7 +137,7 @@ class EngineLog(Base):
     __tablename__ = "engine_logs"
     id = Column(Integer, primary_key=True, index=True)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"))
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_bkk_time)
     logs_json = Column(String) 
 
 class DailyOptimizationResult(Base):
@@ -144,6 +147,6 @@ class DailyOptimizationResult(Base):
     needs_tuning = Column(Integer, default=0) 
     analysis = Column(String)
     suggested_changes = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_bkk_time)
 
 Base.metadata.create_all(bind=engine)

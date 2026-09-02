@@ -16,8 +16,10 @@ from .ai_agent_crypto import (
     run_weekly_optimizer, 
     generate_trade_insight_core as crypto_generate_insight
 )
+from logger_setup import setup_logger, set_trace_id
+import uuid
 
-logger = logging.getLogger("AIAgentRouter")
+logger = setup_logger("AIAgentRouter")
 
 def read_algo_source(file_name: str) -> str:
     # helper from original ai_agent
@@ -36,6 +38,7 @@ def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str,
     AI 1.1 Background Worker. Infinite retry every 10 mins until successful.
     Routes to the specialized AI agent based on algo_type.
     """
+    set_trace_id(f"AIWorker-{trade_id}-{str(uuid.uuid4())[:4]}")
     logger.info(f"AI 1.1 Worker started for trade_id {trade_id} / {symbol}")
     while True:
         try:
