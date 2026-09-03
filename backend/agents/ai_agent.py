@@ -35,12 +35,14 @@ def read_algo_source(file_name: str) -> str:
 
 def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
     """
-    AI 1.1 Background Worker. Infinite retry every 10 mins until successful.
+    AI 1.1 Background Worker. Retries up to 3 times before giving up.
     Routes to the specialized AI agent based on algo_type.
     """
     set_trace_id(f"AIWorker-{trade_id}-{str(uuid.uuid4())[:4]}")
     logger.info(f"AI 1.1 Worker started for trade_id {trade_id} / {symbol}")
-    while True:
+    retries = 0
+    max_retries = 3
+    while retries < max_retries:
         try:
             db = SessionLocal()
             algo_source = ""
@@ -129,6 +131,10 @@ def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str,
                 db.close()
                 
         except Exception as e:
-            logger.error(f"AI Worker failed for trade {trade_id}, retrying in 10 minutes... Error: {e}")
+            retries += 1
+            if retries >= max_retries:
+                logger.error(f"AI Worker permanently failed for trade {trade_id} after {max_retries} attempts. Error: {e}")
+                break
+            logger.error(f"AI Worker failed for trade {trade_id} (Attempt {retries}/{max_retries}), retrying in 10 minutes... Error: {e}")
             traceback.print_exc()
             time.sleep(600)
