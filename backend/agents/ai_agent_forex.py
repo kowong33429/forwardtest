@@ -98,5 +98,5 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
     elif text.startswith("```"):
         text = text[3:-3]
         
-    result = json.loads(text.strip())
+    result = json.loads(text.strip(), strict=False)
     return result
