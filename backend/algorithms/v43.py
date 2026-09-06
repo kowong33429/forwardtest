@@ -53,6 +53,9 @@ def _get_target_allocations_internal(data_dict, symbol='XAUUSDc'):
     kalman_price_prev = state_means[-2][0]
     kalman_momentum = kalman_price - kalman_price_prev
     
+    del kf
+    del state_means
+    
     # Normalize Momentum: Assume a move of 0.5 ATR per day is "Max Momentum" (1.0)
     m_norm = min(abs(kalman_momentum) / (0.5 * current_atr), 1.0)
     
@@ -93,6 +96,8 @@ def _get_target_allocations_internal(data_dict, symbol='XAUUSDc'):
             else:
                 current_regime = "RANGING (Low Vol)"
                 is_trending = False
+                
+            del model
         except:
             pass 
             
@@ -110,6 +115,9 @@ def _get_target_allocations_internal(data_dict, symbol='XAUUSDc'):
         "current_price": current_price
     }
             
+    # Free memory
+    del df
+    
     return state
 
 def get_1d(s):
@@ -166,6 +174,8 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
     V43 The Whipsaw Killer (Daily)
     Support Future Trading / Exness Cent connection if live_execute=True
     """
+    import gc
+    
     symbol_reasons = {}
     targets = {}
     
@@ -180,64 +190,66 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
         return {}, symbol_reasons
         
     df = data_dict[symbol].copy()
-    df['chop'] = calc_chop(df, 14)
-    
-    # Run core HMM/Kalman
-    state = _get_target_allocations_internal({symbol: df}, symbol=symbol)
-    
-    chop_val = get_1d(df['chop']).iloc[-1]
-    
-    if chop_val > 61.8:
-        symbol_reasons[symbol] = {
-            "decision_logic": "HOLD CASH: Choppiness Index > 61.8 (Fractal Consolidation). Skipping trade to avoid whipsaw.",
-            "formula": "CHOP(14) > 61.8",
-            "calculation": f"CHOP = {chop_val:.2f}",
-            "price": get_1d(df['close']).iloc[-1]
-        }
-        return {}, symbol_reasons
+    try:
+        df['chop'] = calc_chop(df, 14)
         
-    if state and state['is_trending'] and state['confidence'] >= 0.3:
-        if trade_history is not None:
-            history = trade_history
+        # Run core HMM/Kalman
+        state = _get_target_allocations_internal({symbol: df}, symbol=symbol)
+        
+        chop_val = get_1d(df['chop']).iloc[-1]
+        
+        if chop_val > 61.8:
+            symbol_reasons[symbol] = {
+                "decision_logic": "HOLD CASH: Choppiness Index > 61.8 (Fractal Consolidation). Skipping trade to avoid whipsaw.",
+                "formula": "CHOP(14) > 61.8",
+                "calculation": f"CHOP = {chop_val:.2f}",
+                "price": get_1d(df['close']).iloc[-1]
+            }
+            return {}, symbol_reasons
+            
+        if state and state['is_trending'] and state['confidence'] >= 0.3:
+            if trade_history is not None:
+                history = trade_history
+            else:
+                # Fallback only if trade_history wasn't provided at all (e.g. testing)
+                history = [1, 0, 1, 1, 0, 1, 1] 
+                
+            ai_prob = get_ai_win_prob(history)
+            
+            raw_kelly = ai_prob - ((1 - ai_prob) / 2.5)
+            blended_kelly = raw_kelly * state['confidence']
+            if blended_kelly <= 0: blended_kelly = 0.01 
+            blended_kelly = min(blended_kelly, 0.30) # V43 Max Kelly 30%
+            
+            direction = "LONG" if state['kalman_momentum'] > 0 else "SHORT"
+            
+            # We assign target weight. For futures, negative means SHORT.
+            weight = blended_kelly if direction == "LONG" else -blended_kelly
+            targets[symbol] = weight
+            
+            atr = state['current_atr']
+            price = get_1d(df['close']).iloc[-1]
+            
+            sl_price = price - (1.0 * atr) if direction == "LONG" else price + (1.0 * atr)
+            tp_price = price + (2.5 * atr) if direction == "LONG" else price - (2.5 * atr)
+            
+            symbol_reasons[symbol] = {
+                "decision_logic": f"V43 SIGNAL MET: Entering {direction} at Kelly {blended_kelly*100:.1f}%. CHOP is {chop_val:.1f} (Safe).",
+                "direction": direction,
+                "sl": sl_price,
+                "tp": tp_price,
+                "price": price,
+                "atr": atr,
+                "state_confidence": state['confidence']
+            }
+            
         else:
-            # Fallback only if trade_history wasn't provided at all (e.g. testing)
-            history = [1, 0, 1, 1, 0, 1, 1] 
+            symbol_reasons[symbol] = {
+                "decision_logic": "HOLD CASH: Not trending or confidence < 30%.",
+                "price": get_1d(df['close']).iloc[-1]
+            }
             
-        ai_prob = get_ai_win_prob(history)
-        
-        raw_kelly = ai_prob - ((1 - ai_prob) / 2.5)
-        blended_kelly = raw_kelly * state['confidence']
-        if blended_kelly <= 0: blended_kelly = 0.01 
-        blended_kelly = min(blended_kelly, 0.30) # V43 Max Kelly 30%
-        
-        direction = "LONG" if state['kalman_momentum'] > 0 else "SHORT"
-        
-        # We assign target weight. For futures, negative means SHORT.
-        weight = blended_kelly if direction == "LONG" else -blended_kelly
-        targets[symbol] = weight
-        
-        atr = state['current_atr']
-        price = get_1d(df['close']).iloc[-1]
-        
-        sl_price = price - (1.0 * atr) if direction == "LONG" else price + (1.0 * atr)
-        tp_price = price + (2.5 * atr) if direction == "LONG" else price - (2.5 * atr)
-        
-        symbol_reasons[symbol] = {
-            "decision_logic": f"V43 SIGNAL MET: Entering {direction} at Kelly {blended_kelly*100:.1f}%. CHOP is {chop_val:.1f} (Safe).",
-            "direction": direction,
-            "sl": sl_price,
-            "tp": tp_price,
-            "price": price,
-            "atr": atr,
-            "state_confidence": state['confidence']
-        }
-        
-
-            
-    else:
-        symbol_reasons[symbol] = {
-            "decision_logic": "HOLD CASH: Not trending or confidence < 30%.",
-            "price": get_1d(df['close']).iloc[-1]
-        }
-        
-    return targets, symbol_reasons
+        return targets, symbol_reasons
+    finally:
+        del df
+        gc.collect()
