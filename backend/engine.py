@@ -56,7 +56,9 @@ def cleanup_old_logs(db):
         cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
         
         deleted_count = db.query(EngineLog).filter(EngineLog.timestamp < cutoff_date).delete(synchronize_session=False)
-        if deleted_count > 0:
+        from database import DailyOptimizationResult
+        deleted_opt_count = db.query(DailyOptimizationResult).filter(DailyOptimizationResult.timestamp < cutoff_date).delete(synchronize_session=False)
+        if deleted_count > 0 or deleted_opt_count > 0:
             db.commit()
             logger.info(f"Cleaned up {deleted_count} old engine logs older than {retention_days} days (before {cutoff_date}).")
     except Exception as e:
