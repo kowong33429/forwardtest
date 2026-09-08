@@ -155,6 +155,20 @@ def tick_engine(algo_name=None):
                 logger.error(f"Failed to load algorithm {portfolio.file_name} for {current_algo_name}: {e}")
                 continue
                 
+            # --- SYNC REAL ACCOUNT BALANCE ---
+            execution_type = getattr(portfolio, 'execution_type', 'paper')
+            if execution_type == 'real' and algo_type == 'forex':
+                try:
+                    mt5_acc = mt5_service.check_health()
+                    if mt5_acc.get("status") == "connected" and mt5_acc.get("balance"):
+                        if mt5_acc["balance"] > 0:
+                            portfolio.balance_usd = mt5_acc["balance"]
+                            db.commit()
+                            logger.info(f"  [SYNC] Updated portfolio {current_algo_name} cash balance from MT5: {portfolio.balance_usd}")
+                except Exception as e:
+                    logger.error(f"  [SYNC] Failed to sync MT5 balance: {e}")
+            # ---------------------------------
+                
             logger.info(f"Step 2: Processing algorithm '{current_algo_name}'... Current Balance: ${portfolio.balance_usd:.2f}")
             
             # 3. Get current holdings

@@ -61,7 +61,7 @@ def execute_trade(req: TradeRequest):
         mt5.initialize()
 
     # 2. เตรียมข้อมูล Symbol
-    symbol = req.symbol.upper()
+    symbol = req.symbol
     if not mt5.symbol_select(symbol, True):
         raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found in Market Watch")
 
@@ -131,7 +131,7 @@ def get_history(symbol: str, timeframe: str = "4h", limit: int = 250):
     }
     mt5_tf = tf_map.get(timeframe.lower(), mt5.TIMEFRAME_H4)
     
-    rates = mt5.copy_rates_from_pos(symbol.upper(), mt5_tf, 0, limit)
+    rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, limit)
     if rates is None:
         raise HTTPException(status_code=404, detail=f"Rates not found for {symbol}")
         
@@ -139,13 +139,13 @@ def get_history(symbol: str, timeframe: str = "4h", limit: int = 250):
     result = []
     for r in rates:
         result.append({
-            "time": r['time'],
-            "open": r['open'],
-            "high": r['high'],
-            "low": r['low'],
-            "close": r['close'],
-            "tickVolume": r['tick_volume'],
-            "realVolume": r['real_volume']
+            "time": int(r['time']),
+            "open": float(r['open']),
+            "high": float(r['high']),
+            "low": float(r['low']),
+            "close": float(r['close']),
+            "tickVolume": float(r['tick_volume']),
+            "realVolume": float(r['real_volume'])
         })
     return result
 
@@ -155,7 +155,7 @@ def get_symbol_info(symbol: str):
     if not mt5.terminal_info():
         mt5.initialize()
         
-    info = mt5.symbol_info(symbol.upper())
+    info = mt5.symbol_info(symbol)
     if info is None:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
         

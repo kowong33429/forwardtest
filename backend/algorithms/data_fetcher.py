@@ -52,7 +52,9 @@ def safe_binance_request(endpoint):
                 _best_binance_url = base_url
                 return data
             else:
-                logger.warning(f"Failed with status {response.status_code} at {url}: {response.text[:100]}")
+                msg = f"Failed with status {response.status_code} at {url}: {response.text[:100]}"
+                logger.warning(msg)
+                last_error = Exception(msg)
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error at {url}: {e}")
             last_error = e
@@ -126,7 +128,7 @@ def get_market_data(additional_symbols=None, algo_type="crypto"):
     if algo_type == "crypto":
         symbols = set(get_top_volume_symbols(50))
     elif algo_type == "forex":
-        symbols = {"XAUUSDc", "EURUSDc", "GBPUSDc", "USDJPYc"}
+        symbols = {"XAUUSDc"}
     else:
         # For stock, we might not have a "top volume" endpoint, just use portfolio symbols
         symbols = set()

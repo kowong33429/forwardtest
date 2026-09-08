@@ -205,7 +205,7 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
         text = text[3:-3]
         
     import re
-    text = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', text)
+    text = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', text)
     result = json.loads(text.strip(), strict=False)
     return result
 
@@ -359,7 +359,7 @@ def async_weekly_optimizer_worker(portfolio_id: int):
                 text = text[3:-3]
                 
             import re
-            text = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', text)
+            text = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', text)
             result = json.loads(text.strip(), strict=False)
             
             needs_tuning = 1 if result.get("needs_tuning", False) else 0
