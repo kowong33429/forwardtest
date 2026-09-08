@@ -298,6 +298,7 @@ export default function Home() {
                       <thead>
                         <tr>
                           <th>Symbol</th>
+                          <th>Lot Size</th>
                           <th>Avg Price</th>
                           <th>Initial Cost</th>
                           <th>Current Value</th>
@@ -327,6 +328,7 @@ export default function Home() {
                           return (
                             <tr key={pos.symbol}>
                               <td style={{fontWeight: '600'}}>{pos.symbol} {pos.direction ? <span style={{color: pos.direction === 'LONG' ? 'var(--success)' : 'var(--danger)', fontSize: '0.8rem'}}>({pos.direction})</span> : ''}</td>
+                              <td>{pos.amount.toFixed(2)}</td>
                               <td>${pos.avg_entry_price.toFixed(4)}</td>
                               <td>{isFutures ? '-' : `$${initialCost.toFixed(2)} USDT`}</td>
                               <td>{isFutures ? '-' : `$${currentValue.toFixed(2)} USDT`}</td>
