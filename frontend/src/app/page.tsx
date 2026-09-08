@@ -146,6 +146,15 @@ export default function Home() {
         total += pos.amount * livePrice;
       });
     }
+    if (port.futures_positions) {
+      port.futures_positions.forEach((pos: any) => {
+        const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
+        const pnl = pos.direction === 'LONG' 
+          ? pos.amount * (livePrice - pos.avg_entry_price)
+          : pos.amount * (pos.avg_entry_price - livePrice);
+        total += pnl;
+      });
+    }
     return total;
   };
 
@@ -283,7 +292,7 @@ export default function Home() {
                 </div>
                 
                 <h3 style={{color: 'var(--text-muted)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2rem'}}>Current Positions</h3>
-                {port.positions && port.positions.length > 0 ? (
+                {((port.positions && port.positions.length > 0) || (port.futures_positions && port.futures_positions.length > 0)) ? (
                   <div className="overflow-x-auto">
                     <table className="exchange-table min-w-full">
                       <thead>
@@ -296,21 +305,31 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {groupPositions(port.positions).map((pos: any) => {
+                        {groupPositions([...(port.positions || []), ...(port.futures_positions || [])]).map((pos: any) => {
                           const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
                           const initialCost = pos.amount * pos.avg_entry_price;
-                          const currentValue = pos.amount * livePrice;
-                          const pnlUsd = currentValue - initialCost;
+                          const isFutures = pos.direction !== undefined;
+                          
+                          let pnlUsd = 0;
+                          let currentValue = 0;
+                          
+                          if (isFutures) {
+                              pnlUsd = pos.direction === 'LONG' ? pos.amount * (livePrice - pos.avg_entry_price) : pos.amount * (pos.avg_entry_price - livePrice);
+                              currentValue = pnlUsd; // For futures, we show PnL as current value or Margin (just show PnL for simplicity)
+                          } else {
+                              currentValue = pos.amount * livePrice;
+                              pnlUsd = currentValue - initialCost;
+                          }
                           const pnlPct = (pnlUsd / initialCost) * 100;
                           const pnlColor = pnlUsd >= 0 ? 'var(--success)' : 'var(--danger)';
                           const pnlSign = pnlUsd >= 0 ? '+' : '';
 
                           return (
                             <tr key={pos.symbol}>
-                              <td style={{fontWeight: '600'}}>{pos.symbol}</td>
+                              <td style={{fontWeight: '600'}}>{pos.symbol} {pos.direction ? <span style={{color: pos.direction === 'LONG' ? 'var(--success)' : 'var(--danger)', fontSize: '0.8rem'}}>({pos.direction})</span> : ''}</td>
                               <td>${pos.avg_entry_price.toFixed(4)}</td>
-                              <td>${initialCost.toFixed(2)} USDT</td>
-                              <td>${currentValue.toFixed(2)} USDT</td>
+                              <td>{isFutures ? '-' : `$${initialCost.toFixed(2)} USDT`}</td>
+                              <td>{isFutures ? '-' : `$${currentValue.toFixed(2)} USDT`}</td>
                               <td style={{color: pnlColor, fontWeight: 'bold'}}>
                                 {pnlSign}{pnlUsd.toFixed(2)} USDT ({pnlSign}{pnlPct.toFixed(2)}%)
                               </td>

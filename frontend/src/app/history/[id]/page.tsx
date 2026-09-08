@@ -30,7 +30,8 @@ export default function HistoryPage() {
         
         if (currentPort) {
           const searchParam = searchTerm ? `&search=${searchTerm}` : '';
-          const trRes = await fetch(`${API_URL}/trades/${id}?page=${page}&limit=${limit}${searchParam}`);
+          const endpoint = currentPort.trading_type === 'future' ? 'futures_trades' : 'trades';
+          const trRes = await fetch(`${API_URL}/${endpoint}/${id}?page=${page}&limit=${limit}${searchParam}`);
           const tradesData = await trRes.json();
           setPortfolio({ ...currentPort, trades: tradesData.data });
           setTotalPages(tradesData.total_pages || 1);
@@ -122,13 +123,21 @@ export default function HistoryPage() {
                 const isExpanded = !!expandedRows[`${trade.id}`];
                 const reasonData = trade.reason ? (() => { try { return JSON.parse(trade.reason); } catch(e) { return null; } })() : null;
                 const totalUsdt = trade.amount * trade.price;
-                const actionColor = trade.action === 'BUY' ? 'var(--success)' : 'var(--danger)';
+                const isFutures = !!trade.direction;
+                const displayAction = isFutures ? `${trade.action} ${trade.direction}` : trade.action;
+                const actionColor = (trade.action === 'BUY' || (isFutures && trade.direction === 'LONG' && trade.action === 'OPEN') || (isFutures && trade.direction === 'SHORT' && trade.action === 'CLOSE')) ? 'var(--success)' : 'var(--danger)';
 
                 let pnlDisplay = <span style={{color: 'var(--text-muted)'}}>-</span>;
-                if (trade.action === 'SELL' && trade.profit_pct !== null && trade.profit_pct !== undefined) {
-                  const buy_price = trade.price / (1 + trade.profit_pct / 100);
-                  const buy_total = trade.amount * buy_price;
-                  const profit_usd = totalUsdt - buy_total;
+                if ((trade.action === 'SELL' || (isFutures && trade.action === 'CLOSE')) && trade.profit_pct !== null && trade.profit_pct !== undefined) {
+                  // For futures, profit_usd is usually stored directly in the DB
+                  let profit_usd = trade.profit_usd;
+                  
+                  if (profit_usd === undefined || profit_usd === null) {
+                      const buy_price = trade.price / (1 + trade.profit_pct / 100);
+                      const buy_total = trade.amount * buy_price;
+                      profit_usd = totalUsdt - buy_total;
+                  }
+                  
                   const pnlColor = profit_usd >= 0 ? 'var(--success)' : 'var(--danger)';
                   const sign = profit_usd >= 0 ? '+' : '';
                   pnlDisplay = (
@@ -143,7 +152,7 @@ export default function HistoryPage() {
                     <tr onClick={() => toggleRow(`${trade.id}`)} className="clickable-row">
                       <td>{formatTime(trade.timestamp)}</td>
                       <td style={{fontWeight: 'bold'}}>{trade.symbol}</td>
-                      <td style={{color: actionColor, fontWeight: 'bold'}}>{trade.action}</td>
+                      <td style={{color: actionColor, fontWeight: 'bold'}}>{displayAction}</td>
                       <td>${trade.price.toFixed(4)}</td>
                       <td>{trade.amount.toFixed(4)}</td>
                       <td>${totalUsdt.toFixed(2)}</td>
