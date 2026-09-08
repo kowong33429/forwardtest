@@ -164,7 +164,29 @@ def get_live_prices(limit=50, additional_symbols=None):
         
         if additional_symbols:
             held_prices = [p for p in prices if p['symbol'] in additional_symbols]
-            logger.info(f"Current held symbols prices: {held_prices}")
+            logger.info(f"Current held crypto symbols prices: {held_prices}")
+            
+            # Fetch missing symbols from MT5 Bridge (Forex/Futures)
+            found_symbols = set(p['symbol'] for p in prices)
+            missing_symbols = [s for s in additional_symbols if s not in found_symbols]
+            
+            for sym in missing_symbols:
+                try:
+                    from services.mt5_service import BASE_URL
+                    resp = requests.get(f"{BASE_URL}/symbol", params={"symbol": sym}, timeout=5)
+                    if resp.status_code == 200:
+                        spec = resp.json()
+                        ask = spec.get("ask", 0)
+                        bid = spec.get("bid", 0)
+                        if ask > 0 and bid > 0:
+                            mid_price = (ask + bid) / 2
+                            prices.append({
+                                "symbol": sym, 
+                                "price": mid_price, 
+                                "change": float(spec.get("price_change", 0.0))
+                            })
+                except Exception as e:
+                    logger.warning(f"Failed to fetch live price for MT5 symbol {sym}: {e}")
         
         # Ensure BTC is always there for demo purposes
         if not any(p['symbol'] == 'BTCUSDT' for p in prices):

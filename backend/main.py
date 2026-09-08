@@ -284,9 +284,9 @@ def force_optimize(db: Session = Depends(get_db), admin: str = Depends(get_curre
 
 @app.get("/market/prices")
 def get_prices(db: Session = Depends(get_db)):
-
     all_positions = db.query(database.Position).all()
-    holding_symbols = list(set([p.symbol for p in all_positions]))
+    f_positions = db.query(database.FuturesPosition).all()
+    holding_symbols = list(set([p.symbol for p in all_positions] + [p.symbol for p in f_positions]))
     prices = data_fetcher.get_live_prices(limit=30, additional_symbols=holding_symbols)
     return {"status": "success", "data": prices}
 

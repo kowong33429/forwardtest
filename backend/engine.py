@@ -2,6 +2,7 @@ import os
 import time
 import traceback
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import logging
 import json
@@ -37,6 +38,9 @@ logger = setup_logger("TradingEngine")
 # Global lock dictionary to prevent race conditions per algorithm
 engine_locks = {}
 lock_for_locks = threading.Lock()
+
+# Bounded executor to prevent thread explosion and OOM
+ai_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="AI_Insight")
 
 def cleanup_old_logs(db):
     """
@@ -209,10 +213,10 @@ def tick_engine(algo_name=None):
                         
                         # TRIGGER AI INSIGHT
                         if getattr(portfolio, 'is_ai_enabled', 1):
-                            threading.Thread(
-                                target=async_generate_trade_insight_worker, 
-                                args=(trade.id, pos.symbol, "SELL", gain_pct*100, pos.avg_entry_price, current_price, current_algo_name)
-                            ).start()
+                            ai_executor.submit(
+                                async_generate_trade_insight_worker, 
+                                trade.id, pos.symbol, "SELL", gain_pct*100, pos.avg_entry_price, current_price, current_algo_name
+                            )
                         
                         positions.remove(pos)
                         if pos.symbol in current_holdings:
@@ -249,10 +253,10 @@ def tick_engine(algo_name=None):
                         
                         # TRIGGER AI INSIGHT
                         if getattr(portfolio, 'is_ai_enabled', 1):
-                            threading.Thread(
-                                target=async_generate_trade_insight_worker, 
-                                args=(f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name)
-                            ).start()
+                            ai_executor.submit(
+                                async_generate_trade_insight_worker, 
+                                f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name
+                            )
                             
                         db.delete(f_pos)
                         db.commit()
@@ -318,10 +322,10 @@ def tick_engine(algo_name=None):
                     
                     # TRIGGER AI INSIGHT
                     if getattr(portfolio, 'is_ai_enabled', 1):
-                        threading.Thread(
-                            target=async_generate_trade_insight_worker, 
-                            args=(trade.id, pos.symbol, "SELL", profit_pct, pos.avg_entry_price, current_price, current_algo_name)
-                        ).start()
+                        ai_executor.submit(
+                            async_generate_trade_insight_worker, 
+                            trade.id, pos.symbol, "SELL", profit_pct, pos.avg_entry_price, current_price, current_algo_name
+                        )
             
             # Futures Closure
             for f_pos in f_positions[:]:
@@ -351,10 +355,10 @@ def tick_engine(algo_name=None):
                         
                         # TRIGGER AI INSIGHT
                         if getattr(portfolio, 'is_ai_enabled', 1):
-                            threading.Thread(
-                                target=async_generate_trade_insight_worker, 
-                                args=(f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name)
-                            ).start()
+                            ai_executor.submit(
+                                async_generate_trade_insight_worker, 
+                                f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name
+                            )
                             
                         db.delete(f_pos)
                         db.commit()
@@ -385,7 +389,12 @@ def tick_engine(algo_name=None):
                             elif algo_type == 'forex':
                                 mt5_service.execute_trade(sym, direction, buy_amount, sl=symbol_reasons.get(sym, {}).get("sl", 0), tp=symbol_reasons.get(sym, {}).get("tp", 0), comment="Open position")
                                 
-                        new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=symbol_reasons.get(sym, {}).get("sl"), tp=symbol_reasons.get(sym, {}).get("tp"))
+                        sl_val = symbol_reasons.get(sym, {}).get("sl")
+                        tp_val = symbol_reasons.get(sym, {}).get("tp")
+                        sl_val = float(sl_val) if sl_val is not None else None
+                        tp_val = float(tp_val) if tp_val is not None else None
+                        
+                        new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val)
                         db.add(new_f_pos)
                         f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
                         db.add(f_trade)
