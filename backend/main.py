@@ -72,14 +72,31 @@ def migrate_db(engine):
     except Exception as e:
         print("Migration error:", e)
 
-def run_tick(algo_name=None):
+def run_crypto_ticks():
+    print("Scheduler running tick for ALL crypto algorithms...")
+    db = SessionLocal()
+    try:
+        portfolios = db.query(Portfolio).filter(Portfolio.is_deleted == 0, Portfolio.algo_type == 'crypto').all()
+        for p in portfolios:
+            engine.tick_engine(p.algorithm_name)
+    except Exception as e:
+        print(f"Error in run_crypto_ticks: {e}")
+    finally:
+        db.close()
 
-    print(f"Scheduler running tick for {algo_name if algo_name else 'ALL'}...")
-    engine.tick_engine(algo_name)
+def run_forex_ticks():
+    print("Scheduler running tick for ALL forex algorithms...")
+    db = SessionLocal()
+    try:
+        portfolios = db.query(Portfolio).filter(Portfolio.is_deleted == 0, Portfolio.algo_type == 'forex').all()
+        for p in portfolios:
+            engine.tick_engine(p.algorithm_name)
+    except Exception as e:
+        print(f"Error in run_forex_ticks: {e}")
+    finally:
+        db.close()
 
 def run_optimization():
-
-
     print("Scheduler running weekly AI optimization...")
     db = SessionLocal()
     try:
@@ -91,7 +108,6 @@ def run_optimization():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     
     # Initialize DB schema
     migrate_db(database.engine)
@@ -137,13 +153,9 @@ async def lifespan(app: FastAPI):
         db.close()
 
     scheduler = BackgroundScheduler()
-    # Separate schedulers for each algorithm using precise 4H cron (UTC candle closures)
-    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V4.0 Aggressive"])
-    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V5.0 Low-Cap Sniper"])
-    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V5.1 God Mode"])
-    scheduler.add_job(run_tick, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC', args=["V9 Kinetic God"])
-    # Run daily at 17:00 New York Time (Market Close for Gold / Daily candle close)
-    scheduler.add_job(run_tick, 'cron', hour=17, minute=0, timezone='America/New_York', args=["V43 Whipsaw Killer"])
+    # Dynamic schedulers based on algo_type
+    scheduler.add_job(run_crypto_ticks, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC')
+    scheduler.add_job(run_forex_ticks, 'cron', hour=17, minute=0, timezone='America/New_York')
     
     # Run weekly on Sunday at 23:59 USA Time (America/New_York)
     scheduler.add_job(run_optimization, 'cron', day_of_week='sun', hour=23, minute=59, timezone='America/New_York')
