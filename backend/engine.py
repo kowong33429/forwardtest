@@ -343,10 +343,22 @@ def tick_engine(algo_name=None):
                         if getattr(portfolio, 'execution_type', 'paper') == 'real':
                             algo_type = getattr(portfolio, 'algo_type', 'crypto')
                             close_dir = "LONG" if f_pos.direction == "SHORT" else "SHORT"
+                            
+                            execution_success = True
                             if algo_type == 'crypto':
-                                binance_service.execute_futures_trade(f_pos.symbol, close_dir, f_pos.amount)
+                                try:
+                                    binance_service.execute_futures_trade(f_pos.symbol, close_dir, f_pos.amount)
+                                except Exception as e:
+                                    logger.error(f"Binance close failed: {e}")
+                                    execution_success = False
                             elif algo_type == 'forex':
-                                mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Close position")
+                                res = mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Close position")
+                                if res.get("status") != "success":
+                                    logger.error(f"MT5 close failed: {res.get('message')}")
+                                    execution_success = False
+                                    
+                            if not execution_success:
+                                continue # skip saving this trade since execution failed
                                 
                         portfolio.balance_usd += profit_usd
                         
@@ -378,29 +390,49 @@ def tick_engine(algo_name=None):
                 target_usd = total_value * abs(target_weight)
                 buy_amount = target_usd / current_price
                 
+                # Format lot size for MT5
+                if getattr(portfolio, 'algo_type', 'crypto') == 'forex':
+                    buy_amount = round(buy_amount, 2)
+                    if buy_amount < 0.01:
+                        buy_amount = 0.01
+                
                 # Is it a futures algorithm?
                 if getattr(portfolio, 'trading_type', 'spot') == 'future' or target_weight < 0:
                     f_pos = next((p for p in f_positions if p.symbol == sym), None)
                     if not f_pos:
                         direction = "LONG" if target_weight > 0 else "SHORT"
                         
+                        execution_success = True
+                        ticket_id = None
                         if getattr(portfolio, 'execution_type', 'paper') == 'real':
                             algo_type = getattr(portfolio, 'algo_type', 'crypto')
                             if algo_type == 'crypto':
-                                binance_service.execute_futures_trade(sym, direction, buy_amount)
+                                try:
+                                    binance_service.execute_futures_trade(sym, direction, buy_amount)
+                                except Exception as e:
+                                    logger.error(f"Binance trade failed: {e}")
+                                    execution_success = False
                             elif algo_type == 'forex':
-                                mt5_service.execute_trade(sym, direction, buy_amount, sl=symbol_reasons.get(sym, {}).get("sl", 0), tp=symbol_reasons.get(sym, {}).get("tp", 0), comment="Open position")
-                                
-                        sl_val = symbol_reasons.get(sym, {}).get("sl")
-                        tp_val = symbol_reasons.get(sym, {}).get("tp")
-                        sl_val = float(sl_val) if sl_val is not None else None
-                        tp_val = float(tp_val) if tp_val is not None else None
-                        
-                        new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val)
-                        db.add(new_f_pos)
-                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
-                        db.add(f_trade)
-                        db.commit()
+                                sl_val_api = round(float(symbol_reasons.get(sym, {}).get("sl", 0)), 3)
+                                tp_val_api = round(float(symbol_reasons.get(sym, {}).get("tp", 0)), 3)
+                                res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
+                                if res.get("status") != "success":
+                                    logger.error(f"MT5 open failed: {res.get('message')}")
+                                    execution_success = False
+                                else:
+                                    ticket_id = res.get("ticket")
+                                    
+                        if execution_success:
+                            sl_val = symbol_reasons.get(sym, {}).get("sl")
+                            tp_val = symbol_reasons.get(sym, {}).get("tp")
+                            sl_val = round(float(sl_val), 3) if sl_val is not None else None
+                            tp_val = round(float(tp_val), 3) if tp_val is not None else None
+                            
+                            new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=ticket_id)
+                            db.add(new_f_pos)
+                            f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)), ticket_id=ticket_id)
+                            db.add(f_trade)
+                            db.commit()
                 else:
                     # Legacy Spot Buy
                     pos = next((p for p in positions if p.symbol == sym), None)
