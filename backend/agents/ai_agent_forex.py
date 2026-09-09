@@ -98,5 +98,13 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
     elif text.startswith("```"):
         text = text[3:-3]
         
-    result = json.loads(text.strip(), strict=False)
+    try:
+        result = json.loads(text.strip(), strict=False)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse AI JSON: {e}\nRaw output: {text}")
+        result = {
+            "summary": "AI Insight generation failed due to malformed JSON. Please check logs.",
+            "macro_context": "N/A",
+            "lessons_learned": "N/A"
+        }
     return result

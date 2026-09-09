@@ -206,7 +206,15 @@ def generate_trade_insight_core(symbol: str, action: str, profit_pct: float, ent
         
     import re
     text = re.sub(r'(?<!\\)\\(?![/"\\bfnrtu])', r'\\\\', text)
-    result = json.loads(text.strip(), strict=False)
+    try:
+        result = json.loads(text.strip(), strict=False)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse AI JSON: {e}\nRaw output: {text}")
+        result = {
+            "summary": "AI Insight generation failed due to malformed JSON. Please check logs.",
+            "macro_context": "N/A",
+            "lessons_learned": "N/A"
+        }
     return result
 
 def async_generate_trade_insight_worker(trade_id: int, symbol: str, action: str, profit_pct: float, entry_price: float, exit_price: float, algorithm: str):
