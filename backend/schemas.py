@@ -10,7 +10,7 @@ class AIInsightBase(BaseModel):
 class AIInsightResponse(AIInsightBase):
     id: int
     trade_id: Optional[int] = None
-    created_at: datetime
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -26,7 +26,7 @@ class TradeBase(BaseModel):
 class TradeResponse(TradeBase):
     id: int
     portfolio_id: int
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     insight: Optional[AIInsightResponse] = None
     
     class Config:
@@ -46,7 +46,7 @@ class FuturesTradeBase(BaseModel):
 class FuturesTradeResponse(FuturesTradeBase):
     id: int
     portfolio_id: int
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     insight: Optional[AIInsightResponse] = None
     
     class Config:
@@ -69,7 +69,7 @@ class FuturesPositionResponse(BaseModel):
     avg_entry_price: float
     sl: Optional[float] = None
     tp: Optional[float] = None
-    leverage: float
+    leverage: Optional[float] = 1.0
     ticket_id: Optional[str] = None
     
     class Config:
@@ -80,18 +80,18 @@ class PortfolioBase(BaseModel):
     description: Optional[str] = None
     balance_usd: float
     initial_balance: float = 10000.0
-    is_hidden: bool = False
-    is_ai_enabled: bool = True
-    is_deleted: bool = False
+    is_hidden: Optional[bool] = False
+    is_ai_enabled: Optional[bool] = True
+    is_deleted: Optional[bool] = False
     file_name: Optional[str] = None
-    trading_type: str = "spot"
-    algo_type: str = "crypto"
-    execution_type: str = "paper"
+    trading_type: Optional[str] = "spot"
+    algo_type: Optional[str] = "crypto"
+    execution_type: Optional[str] = "paper"
 
 class PortfolioResponse(PortfolioBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     positions: List[PositionResponse] = []
     futures_positions: List[FuturesPositionResponse] = []
     
