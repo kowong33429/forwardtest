@@ -100,6 +100,41 @@ def fetch_historical_klines(symbol, timeframe="4h", limit=250):
         logger.error(f"Failed to fetch historical klines via API for {symbol}: {e}")
         return None
 
+def get_open_positions():
+    """
+    Fetches all open positions via our custom Bridge API.
+    """
+    try:
+        resp = requests.get(f"{BASE_URL}/positions", headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch open positions: {str(e)}")
+        return []
+
+def modify_position(ticket, sl, tp):
+    """
+    Modifies the SL and TP of an existing position via our custom Bridge API.
+    """
+    try:
+        payload = {
+            "ticket": int(ticket),
+            "sl": float(sl),
+            "tp": float(tp)
+        }
+        resp = requests.post(f"{BASE_URL}/modify", json=payload, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        
+        result = resp.json()
+        if result.get("success"):
+            return {"status": "success", "message": "Position modified successfully"}
+        else:
+            return {"status": "error", "message": result.get("message", "Unknown error")}
+            
+    except Exception as e:
+        logger.error(f"Failed to modify position {ticket}: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 def is_forex_market_open(symbol="XAUUSDc"):
     """
     Hybrid Check:

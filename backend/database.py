@@ -28,6 +28,7 @@ class Portfolio(Base):
     description = Column(String, nullable=True) 
     balance_usd = Column(Float, default=10000.0)
     initial_balance = Column(Float, default=10000.0)
+    high_water_mark = Column(Float, nullable=True)
     is_hidden = Column(Integer, default=0) 
     is_ai_enabled = Column(Integer, default=1)
     is_deleted = Column(Integer, default=0)
@@ -85,6 +86,8 @@ class FuturesPosition(Base):
     tp = Column(Float, nullable=True)
     leverage = Column(Float, default=1.0)
     ticket_id = Column(String, nullable=True) # Exness MT5 ticket ID
+    raw_risk_pct = Column(Float, nullable=True)
+    entry_atr = Column(Float, nullable=True)
     
     portfolio = relationship("Portfolio", back_populates="futures_positions")
 

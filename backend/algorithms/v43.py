@@ -203,7 +203,9 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
                 "decision_logic": "HOLD CASH: Choppiness Index > 61.8 (Fractal Consolidation). Skipping trade to avoid whipsaw.",
                 "formula": "CHOP(14) > 61.8",
                 "calculation": f"CHOP = {chop_val:.2f}",
-                "price": get_1d(df['close']).iloc[-1]
+                "price": get_1d(df['close']).iloc[-1],
+                "is_trending": state['is_trending'] if state else False,
+                "kalman_momentum": state['kalman_momentum'] if state else 0
             }
             return {}, symbol_reasons
             
@@ -240,13 +242,17 @@ def get_target_allocations(data_dict, current_holdings=None, total_value=10000.0
                 "tp": tp_price,
                 "price": price,
                 "atr": atr,
-                "state_confidence": state['confidence']
+                "state_confidence": state['confidence'],
+                "is_trending": state['is_trending'],
+                "kalman_momentum": state['kalman_momentum']
             }
             
         else:
             symbol_reasons[symbol] = {
                 "decision_logic": "HOLD CASH: Not trending or confidence < 30%.",
-                "price": get_1d(df['close']).iloc[-1]
+                "price": get_1d(df['close']).iloc[-1],
+                "is_trending": state['is_trending'] if state else False,
+                "kalman_momentum": state['kalman_momentum'] if state else 0
             }
             
         return targets, symbol_reasons

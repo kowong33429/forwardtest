@@ -45,6 +45,8 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN execution_type VARCHAR DEFAULT 'paper'"))
             if 'algo_type' not in columns:
                 conn.execute(text("ALTER TABLE portfolios ADD COLUMN algo_type VARCHAR DEFAULT 'crypto'"))
+            if 'high_water_mark' not in columns:
+                conn.execute(text("ALTER TABLE portfolios ADD COLUMN high_water_mark FLOAT"))
                 
             # Migrate futures_positions
             if 'asset_class' not in fp_columns:
@@ -57,6 +59,10 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE futures_positions ADD COLUMN margin_used FLOAT DEFAULT 0.0"))
             if 'accumulated_swap_or_funding' not in fp_columns:
                 conn.execute(text("ALTER TABLE futures_positions ADD COLUMN accumulated_swap_or_funding FLOAT DEFAULT 0.0"))
+            if 'raw_risk_pct' not in fp_columns:
+                conn.execute(text("ALTER TABLE futures_positions ADD COLUMN raw_risk_pct FLOAT"))
+            if 'entry_atr' not in fp_columns:
+                conn.execute(text("ALTER TABLE futures_positions ADD COLUMN entry_atr FLOAT"))
                 
             # Migrate futures_trades
             if 'asset_class' not in ft_columns:
@@ -93,6 +99,23 @@ def run_forex_ticks():
             engine.tick_engine(p.algorithm_name)
     except Exception as e:
         print(f"Error in run_forex_ticks: {e}")
+    finally:
+        db.close()
+
+def run_forex_position_monitor():
+    print("Scheduler running hourly forex position monitor...")
+    is_open, reason = mt5_service.is_forex_market_open("XAUUSDc")
+    if not is_open:
+        print(f"Skipping monitor: {reason}")
+        return
+        
+    db = SessionLocal()
+    try:
+        portfolios = db.query(Portfolio).filter(Portfolio.is_deleted == 0, Portfolio.algo_type == 'forex').all()
+        for p in portfolios:
+            engine.monitor_forex_positions(p.id)
+    except Exception as e:
+        print(f"Error in run_forex_position_monitor: {e}")
     finally:
         db.close()
 
@@ -159,6 +182,9 @@ async def lifespan(app: FastAPI):
     # - ฤดูร้อน (EDT, UTC-4): 18:30 EDT = 05:30 ไทย (ตลาดเปิดแล้ว 30 นาที)
     # - ฤดูหนาว (EST, UTC-5): 18:30 EST = 06:30 ไทย (ตลาดเปิดแล้ว 30 นาที)
     scheduler.add_job(run_forex_ticks, 'cron', hour=18, minute=30, timezone='America/New_York')
+    
+    # Forex Hourly: ทุก 1 ชม. (Trailing Stop + Emergency Exit)
+    scheduler.add_job(run_forex_position_monitor, 'cron', minute=15, timezone='America/New_York')
     
     # Run weekly on Sunday at 23:59 USA Time (America/New_York)
     scheduler.add_job(run_optimization, 'cron', day_of_week='sun', hour=23, minute=59, timezone='America/New_York')

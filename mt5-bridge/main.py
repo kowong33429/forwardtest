@@ -17,6 +17,11 @@ class TradeRequest(BaseModel):
     tp: float = 0.0 # Take Profit (0 = ไม่ตั้ง)
     comment: str = "API_Order"
 
+class ModifyRequest(BaseModel):
+    ticket: int
+    sl: float = 0.0
+    tp: float = 0.0
+
 # ==========================================
 # 2. FastAPI Setup & MT5 Lifecycle
 # ==========================================
@@ -185,6 +190,48 @@ def get_symbol_info(symbol: str):
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
         
     return info._asdict()
+
+@app.get("/positions")
+def get_open_positions():
+    """ดึง Open Positions ทั้งหมด"""
+    if not mt5.terminal_info():
+        mt5.initialize()
+        
+    positions = mt5.positions_get()
+    if positions is None:
+        return []
+        
+    result = []
+    for pos in positions:
+        result.append(pos._asdict())
+    return result
+
+@app.post("/modify")
+def modify_position(req: ModifyRequest):
+    """แก้ไข SL/TP ของ Order"""
+    if not mt5.terminal_info():
+        mt5.initialize()
+        
+    request = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "position": req.ticket,
+        "sl": req.sl,
+        "tp": req.tp
+    }
+    
+    result = mt5.order_send(request)
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        return {
+            "success": False,
+            "error_code": result.retcode,
+            "message": result.comment
+        }
+        
+    return {
+        "success": True,
+        "order_ticket": result.order,
+        "message": "Modification successful"
+    }
 
 if __name__ == "__main__":
     # รันเซิร์ฟเวอร์ที่ Port 8000

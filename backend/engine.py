@@ -64,6 +64,84 @@ def cleanup_old_logs(db):
     except Exception as e:
         logger.error(f"Error during log cleanup: {e}")
 
+def monitor_forex_positions(portfolio_id: int):
+    """
+    Run hourly to check Trailing Stop and Emergency Exit for Forex positions.
+    """
+    db = SessionLocal()
+    try:
+        portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+        if not portfolio: return
+        
+        f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio_id).all()
+        if not f_positions: return
+        
+        # We need live prices
+        symbols = [p.symbol for p in f_positions]
+        prices_data = data_fetcher.get_market_data(symbols, algo_type='forex')
+        if not prices_data: return
+        
+        for f_pos in f_positions:
+            if f_pos.symbol not in prices_data: continue
+            current_price = float(prices_data[f_pos.symbol]['close'].iloc[-1])
+            entry_price = f_pos.avg_entry_price
+            entry_atr = getattr(f_pos, 'entry_atr', 0)
+            
+            if not entry_atr: continue # Backward compatibility
+            
+            # 1. Trailing Stop
+            if f_pos.direction == "LONG" and (current_price - entry_price) >= 1.5 * entry_atr:
+                new_sl = max(f_pos.sl or 0, entry_price)
+                if new_sl != f_pos.sl:
+                    if f_pos.ticket_id:
+                        res = mt5_service.modify_position(f_pos.ticket_id, new_sl, f_pos.tp)
+                        if res.get("status") == "success":
+                            f_pos.sl = new_sl
+                            db.commit()
+                            logger.info(f"Trailing Stop activated for {f_pos.symbol} LONG: SL moved to {new_sl}")
+                            
+            elif f_pos.direction == "SHORT" and (entry_price - current_price) >= 1.5 * entry_atr:
+                new_sl = min(f_pos.sl or float('inf'), entry_price)
+                if new_sl != f_pos.sl:
+                    if f_pos.ticket_id:
+                        res = mt5_service.modify_position(f_pos.ticket_id, new_sl, f_pos.tp)
+                        if res.get("status") == "success":
+                            f_pos.sl = new_sl
+                            db.commit()
+                            logger.info(f"Trailing Stop activated for {f_pos.symbol} SHORT: SL moved to {new_sl}")
+                            
+            # 2. Emergency Exit
+            raw_risk = getattr(f_pos, 'raw_risk_pct', 0)
+            if raw_risk and raw_risk > 0.10:
+                is_emergency = False
+                if f_pos.direction == "LONG" and (entry_price - current_price) >= 0.8 * entry_atr:
+                    is_emergency = True
+                elif f_pos.direction == "SHORT" and (current_price - entry_price) >= 0.8 * entry_atr:
+                    is_emergency = True
+                    
+                if is_emergency:
+                    close_dir = "SHORT" if f_pos.direction == "LONG" else "LONG"
+                    if f_pos.ticket_id:
+                        res = mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Emergency Exit")
+                        if res.get("status") == "success":
+                            logger.info(f"Emergency Exit triggered for {f_pos.symbol} {f_pos.direction}")
+                            
+                            profit_pct = ((current_price - entry_price) / entry_price) * 100 if f_pos.direction == "LONG" else ((entry_price - current_price) / entry_price) * 100
+                            profit_usd = f_pos.amount * (current_price - entry_price) if f_pos.direction == "LONG" else f_pos.amount * (entry_price - current_price)
+                            
+                            portfolio.balance_usd += profit_usd
+                            f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=f"Emergency Exit")
+                            db.add(f_trade)
+                            db.delete(f_pos)
+                            db.commit()
+
+    except Exception as e:
+        logger.error(f"Error in monitor_forex_positions: {e}")
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
 def tick_engine(algo_name=None):
     """
     Core paper trading engine loop.
@@ -335,11 +413,27 @@ def tick_engine(algo_name=None):
                 current_price = current_prices.get(f_pos.symbol)
                 
                 if current_price:
-                    # If target is 0, or we need to flip direction
-                    if target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
+                    # Early Exit (Momentum Guard) check
+                    should_early_exit = False
+                    raw_risk = getattr(f_pos, 'raw_risk_pct', 0)
+                    if raw_risk and raw_risk > 0.10:
+                        state_data = symbol_reasons.get(f_pos.symbol, {})
+                        is_trending = state_data.get("is_trending", True)
+                        kalman_momentum = state_data.get("kalman_momentum", 0)
+                        
+                        momentum_flip = (f_pos.direction == "LONG" and kalman_momentum < 0) or \
+                                        (f_pos.direction == "SHORT" and kalman_momentum > 0)
+                                        
+                        if not is_trending or momentum_flip:
+                            should_early_exit = True
+                            logger.info(f"Momentum Guard: Early Exit triggered for {f_pos.symbol}")
+                            
+                    # If target is 0, or we need to flip direction, OR should_early_exit
+                    if should_early_exit or target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
                         profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
                         profit_usd = f_pos.amount * (current_price - f_pos.avg_entry_price) if f_pos.direction == "LONG" else f_pos.amount * (f_pos.avg_entry_price - current_price)
                         
+                        reason_msg = "Momentum Guard: Early Exit" if should_early_exit else safe_dumps(symbol_reasons.get(f_pos.symbol))
                         if getattr(portfolio, 'execution_type', 'paper') == 'real':
                             algo_type = getattr(portfolio, 'algo_type', 'crypto')
                             close_dir = "LONG" if f_pos.direction == "SHORT" else "SHORT"
@@ -362,7 +456,7 @@ def tick_engine(algo_name=None):
                                 
                         portfolio.balance_usd += profit_usd
                         
-                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=safe_dumps(symbol_reasons.get(f_pos.symbol)))
+                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=reason_msg)
                         db.add(f_trade)
                         db.commit()
                         db.refresh(f_trade)
@@ -386,6 +480,23 @@ def tick_engine(algo_name=None):
                     current_price = symbol_reasons[sym]['price']
                     
                 if not current_price or target_weight == 0: continue
+                
+                # DD-adjusted Kelly (Only for forex/V43)
+                raw_risk = abs(target_weight)
+                entry_atr = symbol_reasons.get(sym, {}).get("atr", 0)
+                
+                if getattr(portfolio, 'algo_type', 'crypto') == 'forex':
+                    if getattr(portfolio, 'high_water_mark', None) is None:
+                        portfolio.high_water_mark = portfolio.initial_balance
+                        
+                    if portfolio.balance_usd > portfolio.high_water_mark:
+                        portfolio.high_water_mark = portfolio.balance_usd
+                        db.commit()
+                        
+                    if portfolio.high_water_mark > 0:
+                        dd_ratio = (portfolio.balance_usd / portfolio.high_water_mark) ** 2
+                        target_weight = target_weight * dd_ratio
+                        logger.info(f"  DD-adjusted Kelly for {sym}: {raw_risk*100:.2f}% -> {abs(target_weight)*100:.2f}%")
                 
                 target_usd = total_value * abs(target_weight)
                 
@@ -449,7 +560,7 @@ def tick_engine(algo_name=None):
                             sl_val = round(float(sl_val), 3) if sl_val is not None else None
                             tp_val = round(float(tp_val), 3) if tp_val is not None else None
                             
-                            new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=ticket_id)
+                            new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=ticket_id, raw_risk_pct=raw_risk, entry_atr=entry_atr)
                             db.add(new_f_pos)
                             f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)), ticket_id=ticket_id)
                             db.add(f_trade)
