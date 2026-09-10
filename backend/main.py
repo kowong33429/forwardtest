@@ -155,7 +155,10 @@ async def lifespan(app: FastAPI):
     scheduler = BackgroundScheduler()
     # Dynamic schedulers based on algo_type
     scheduler.add_job(run_crypto_ticks, 'cron', hour='0,4,8,12,16,20', minute=0, timezone='UTC')
-    scheduler.add_job(run_forex_ticks, 'cron', hour=17, minute=0, timezone='America/New_York')
+    # รันทุกวัน 18:30 New York (America/New_York จัดการ DST อัตโนมัติ)
+    # - ฤดูร้อน (EDT, UTC-4): 18:30 EDT = 05:30 ไทย (ตลาดเปิดแล้ว 30 นาที)
+    # - ฤดูหนาว (EST, UTC-5): 18:30 EST = 06:30 ไทย (ตลาดเปิดแล้ว 30 นาที)
+    scheduler.add_job(run_forex_ticks, 'cron', hour=18, minute=30, timezone='America/New_York')
     
     # Run weekly on Sunday at 23:59 USA Time (America/New_York)
     scheduler.add_job(run_optimization, 'cron', day_of_week='sun', hour=23, minute=59, timezone='America/New_York')

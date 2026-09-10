@@ -138,7 +138,9 @@ def get_market_data(additional_symbols=None, algo_type="crypto"):
         
     data_dict = {}
     for sym in symbols:
-        df = fetch_klines(sym, algo_type=algo_type)
+        # Forex ใช้ Daily candle, Crypto ใช้ 4h candle
+        interval = "1d" if algo_type == "forex" else "4h"
+        df = fetch_klines(sym, interval=interval, algo_type=algo_type)
         if df is not None and not df.empty:
             data_dict[sym] = df
     return data_dict
@@ -172,8 +174,8 @@ def get_live_prices(limit=50, additional_symbols=None):
             
             for sym in missing_symbols:
                 try:
-                    from services.mt5_service import BASE_URL
-                    resp = requests.get(f"{BASE_URL}/symbol", params={"symbol": sym}, timeout=5)
+                    from services.mt5_service import BASE_URL, HEADERS
+                    resp = requests.get(f"{BASE_URL}/symbol", params={"symbol": sym}, headers=HEADERS, timeout=5)
                     if resp.status_code == 200:
                         spec = resp.json()
                         ask = spec.get("ask", 0)

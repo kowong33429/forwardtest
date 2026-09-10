@@ -388,13 +388,30 @@ def tick_engine(algo_name=None):
                 if not current_price or target_weight == 0: continue
                 
                 target_usd = total_value * abs(target_weight)
-                buy_amount = target_usd / current_price
                 
-                # Format lot size for MT5
                 if getattr(portfolio, 'algo_type', 'crypto') == 'forex':
+                    # คำนวณ Lot Size ตามความเสี่ยง (Risk-based Lot Sizing)
+                    # Cent Account (เช่น XAUUSDc): Balance หน่วย USC, P&L ก็ USC ทั้งหมด
+                    # ดังนั้น ใช้ target_usd (USC) ตรงๆ ได้เลย ไม่ต้องแปลงหน่วย
+                    reason_data = symbol_reasons.get(sym, {})
+                    sl_val = reason_data.get("sl")
+                    
+                    # Contract Size: XAU = 100 oz/lot, คู่เงินปกติ = 100,000 units/lot
+                    contract_size = 100 if "XAU" in sym.upper() else 100000
+                    
+                    if sl_val and current_price != sl_val:
+                        sl_distance = abs(current_price - float(sl_val))
+                    else:
+                        sl_distance = current_price * 0.01 # Fallback 1%
+                        
+                    # สูตร: Lot Size = จำนวนเงินที่จะยอมเสีย / (ระยะ SL * Contract Size)
+                    buy_amount = target_usd / (sl_distance * contract_size)
                     buy_amount = round(buy_amount, 2)
                     if buy_amount < 0.01:
                         buy_amount = 0.01
+                else:
+                    # ของเก่าสำหรับ Crypto Spot
+                    buy_amount = target_usd / current_price
                 
                 # Is it a futures algorithm?
                 if getattr(portfolio, 'trading_type', 'spot') == 'future' or target_weight < 0:
@@ -417,7 +434,11 @@ def tick_engine(algo_name=None):
                                 tp_val_api = round(float(symbol_reasons.get(sym, {}).get("tp", 0)), 3)
                                 res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
                                 if res.get("status") != "success":
-                                    logger.error(f"MT5 open failed: {res.get('message')}")
+                                    msg = res.get('message', '')
+                                    if "closed" in msg.lower():
+                                        logger.info(f"Skipping trade, MT5 Market is closed.")
+                                    else:
+                                        logger.error(f"MT5 open failed: {msg}")
                                     execution_success = False
                                 else:
                                     ticket_id = res.get("ticket")
