@@ -1,5 +1,6 @@
 import MetaTrader5 as mt5
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 from contextlib import asynccontextmanager
@@ -32,6 +33,30 @@ async def lifespan(app: FastAPI):
     print("❌ Disconnected from MT5")
 
 app = FastAPI(title="MT5 Bridge API", lifespan=lifespan)
+
+# ==========================================
+# Secret Token Authentication Middleware
+# ==========================================
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+API_SECRET_TOKEN = os.getenv("MT5_API_SECRET")
+
+@app.middleware("http")
+async def token_auth_middleware(request: Request, call_next):
+    client_token = request.headers.get("Authorization")
+    expected_token = f"Bearer {API_SECRET_TOKEN}"
+    
+    if client_token != expected_token:
+        client_ip = request.client.host
+        print(f"Blocked unauthorized access from IP: {client_ip} (Invalid Token)")
+        return JSONResponse(
+            status_code=401, 
+            content={"detail": "Unauthorized: Invalid or missing API Token."}
+        )
+        
+    return await call_next(request)
 
 # ==========================================
 # 3. API Endpoints

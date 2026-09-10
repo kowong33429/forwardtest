@@ -10,6 +10,8 @@ logger = logging.getLogger("MT5Service")
 
 # Get base path from .env, fallback to the requested IP
 BASE_URL = os.getenv("MT5_BRIDGE_URL", "http://38.54.33.151:8000")
+API_SECRET_TOKEN = os.getenv("MT5_API_SECRET")
+HEADERS = {"Authorization": f"Bearer {API_SECRET_TOKEN}"}
 
 def check_health():
     """
@@ -17,10 +19,10 @@ def check_health():
     """
     try:
         # Check both bridge status and account info
-        health_resp = requests.get(f"{BASE_URL}/", timeout=10)
+        health_resp = requests.get(f"{BASE_URL}/", headers=HEADERS, timeout=10)
         health_resp.raise_for_status()
         
-        acc_resp = requests.get(f"{BASE_URL}/account", timeout=10)
+        acc_resp = requests.get(f"{BASE_URL}/account", headers=HEADERS, timeout=10)
         acc_resp.raise_for_status()
         
         acc_data = acc_resp.json()
@@ -52,7 +54,7 @@ def execute_trade(symbol, direction, volume, sl, tp, comment="ForwardTest AI"):
             "comment": comment
         }
         
-        resp = requests.post(f"{BASE_URL}/trade", json=payload, timeout=15)
+        resp = requests.post(f"{BASE_URL}/trade", json=payload, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         
         result = resp.json()
@@ -76,7 +78,7 @@ def fetch_historical_klines(symbol, timeframe="4h", limit=250):
             "timeframe": timeframe,
             "limit": limit
         }
-        resp = requests.get(f"{BASE_URL}/history", params=params, timeout=30)
+        resp = requests.get(f"{BASE_URL}/history", params=params, headers=HEADERS, timeout=30)
         resp.raise_for_status()
         
         candles = resp.json()
@@ -124,7 +126,7 @@ def is_forex_market_open(symbol="XAUUSDc"):
         
     # 2. Check via Bridge API
     try:
-        resp = requests.get(f"{BASE_URL}/symbol", params={"symbol": symbol}, timeout=10)
+        resp = requests.get(f"{BASE_URL}/symbol", params={"symbol": symbol}, headers=HEADERS, timeout=10)
         resp.raise_for_status()
         
         spec = resp.json()
