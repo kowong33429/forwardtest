@@ -560,9 +560,10 @@ def tick_engine(algo_name=None):
                             sl_val = round(float(sl_val), 3) if sl_val is not None else None
                             tp_val = round(float(tp_val), 3) if tp_val is not None else None
                             
-                            new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=ticket_id, raw_risk_pct=raw_risk, entry_atr=entry_atr)
+                            safe_ticket_id = str(ticket_id) if ticket_id is not None else None
+                            new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=safe_ticket_id, raw_risk_pct=raw_risk, entry_atr=entry_atr)
                             db.add(new_f_pos)
-                            f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)), ticket_id=ticket_id)
+                            f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=sym, direction=direction, action="OPEN", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)), ticket_id=safe_ticket_id)
                             db.add(f_trade)
                             db.commit()
                 else:

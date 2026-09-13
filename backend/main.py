@@ -63,6 +63,12 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE futures_positions ADD COLUMN raw_risk_pct FLOAT"))
             if 'entry_atr' not in fp_columns:
                 conn.execute(text("ALTER TABLE futures_positions ADD COLUMN entry_atr FLOAT"))
+            if 'ticket_id' not in fp_columns:
+                conn.execute(text("ALTER TABLE futures_positions ADD COLUMN ticket_id VARCHAR"))
+            if 'sl' not in fp_columns:
+                conn.execute(text("ALTER TABLE futures_positions ADD COLUMN sl FLOAT"))
+            if 'tp' not in fp_columns:
+                conn.execute(text("ALTER TABLE futures_positions ADD COLUMN tp FLOAT"))
                 
             # Migrate futures_trades
             if 'asset_class' not in ft_columns:
@@ -75,6 +81,8 @@ def migrate_db(engine):
                 conn.execute(text("ALTER TABLE futures_trades ADD COLUMN swap_or_funding FLOAT DEFAULT 0.0"))
             if 'net_profit_usd' not in ft_columns:
                 conn.execute(text("ALTER TABLE futures_trades ADD COLUMN net_profit_usd FLOAT"))
+            if 'ticket_id' not in ft_columns:
+                conn.execute(text("ALTER TABLE futures_trades ADD COLUMN ticket_id VARCHAR"))
     except Exception as e:
         print("Migration error:", e)
 
