@@ -546,7 +546,9 @@ def tick_engine(algo_name=None):
                                     open_positions = mt5_service.get_open_positions()
                                     if isinstance(open_positions, list):
                                         for mp in open_positions:
-                                            if mp.get('symbol') == sym:
+                                            # Check that symbol matches AND comment indicates it's from our app
+                                            # We use "Open position" as that's what the engine passes to execute_trade
+                                            if mp.get('symbol') == sym and "Open position" in str(mp.get('comment', '')):
                                                 already_open = True
                                                 ticket_id = mp.get('ticket')
                                                 if mp.get('price_open'):
