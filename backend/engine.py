@@ -541,24 +541,51 @@ def tick_engine(algo_name=None):
                                     logger.error(f"Binance trade failed: {e}")
                                     execution_success = False
                             elif algo_type == 'forex':
-                                sl_val_api = round(float(symbol_reasons.get(sym, {}).get("sl", 0)), 3)
-                                tp_val_api = round(float(symbol_reasons.get(sym, {}).get("tp", 0)), 3)
-                                res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
-                                if res.get("status") != "success":
-                                    msg = res.get('message', '')
-                                    if "closed" in msg.lower():
-                                        logger.info(f"Skipping trade, MT5 Market is closed.")
-                                    else:
-                                        logger.error(f"MT5 open failed: {msg}")
-                                    execution_success = False
+                                already_open = False
+                                try:
+                                    open_positions = mt5_service.get_open_positions()
+                                    if isinstance(open_positions, list):
+                                        for mp in open_positions:
+                                            if mp.get('symbol') == sym:
+                                                already_open = True
+                                                ticket_id = mp.get('ticket')
+                                                if mp.get('price_open'):
+                                                    current_price = float(mp.get('price_open'))
+                                                break
+                                except Exception as e:
+                                    logger.error(f"Failed to check MT5 open positions: {e}")
+                                
+                                if already_open:
+                                    logger.warning(f"Order for {sym} is already open on MT5 (Ticket: {ticket_id}). Skipping new order and recovering to DB.")
+                                    execution_success = True
                                 else:
-                                    ticket_id = res.get("ticket")
+                                    raw_sl = symbol_reasons.get(sym, {}).get("sl")
+                                    raw_tp = symbol_reasons.get(sym, {}).get("tp")
+                                    sl_val_api = round(float(raw_sl), 3) if raw_sl not in (None, "", "None", "null") else 0.0
+                                    tp_val_api = round(float(raw_tp), 3) if raw_tp not in (None, "", "None", "null") else 0.0
+                                    
+                                    res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
+                                    if res.get("status") != "success":
+                                        msg = res.get('message', '')
+                                        if "closed" in msg.lower():
+                                            logger.info(f"Skipping trade, MT5 Market is closed.")
+                                        else:
+                                            logger.error(f"MT5 open failed: {msg}")
+                                        execution_success = False
+                                    else:
+                                        ticket_id = res.get("ticket")
                                     
                         if execution_success:
                             sl_val = symbol_reasons.get(sym, {}).get("sl")
                             tp_val = symbol_reasons.get(sym, {}).get("tp")
-                            sl_val = round(float(sl_val), 3) if sl_val is not None else None
-                            tp_val = round(float(tp_val), 3) if tp_val is not None else None
+                            try:
+                                sl_val = round(float(sl_val), 3) if sl_val not in (None, "", "None", "null") else None
+                            except:
+                                sl_val = None
+                            try:
+                                tp_val = round(float(tp_val), 3) if tp_val not in (None, "", "None", "null") else None
+                            except:
+                                tp_val = None
                             
                             safe_ticket_id = str(ticket_id) if ticket_id is not None else None
                             new_f_pos = FuturesPosition(portfolio_id=portfolio.id, symbol=sym, direction=direction, amount=buy_amount, avg_entry_price=current_price, sl=sl_val, tp=tp_val, ticket_id=safe_ticket_id, raw_risk_pct=raw_risk, entry_atr=entry_atr)
