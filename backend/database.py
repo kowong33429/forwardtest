@@ -9,6 +9,18 @@ def get_bkk_time():
 
 load_dotenv()
 
+try:
+    import numpy as np
+    import psycopg2
+    from psycopg2.extensions import register_adapter, adapt
+    
+    register_adapter(np.float64, lambda x: adapt(float(x)))
+    register_adapter(np.float32, lambda x: adapt(float(x)))
+    register_adapter(np.int64, lambda x: adapt(int(x)))
+    register_adapter(np.int32, lambda x: adapt(int(x)))
+    register_adapter(np.bool_, lambda x: adapt(bool(x)))
+except ImportError:
+    pass
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./forwardtest.db")
 
 if DATABASE_URL.startswith("sqlite"):
