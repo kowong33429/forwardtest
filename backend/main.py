@@ -151,7 +151,8 @@ async def lifespan(app: FastAPI):
             "V5.0 Low-Cap Sniper": {"desc": "Targets breakout Low-Cap gems (10M-300M Market Cap) on 4H candles with strict fundamental filters.", "file": "v5.py", "exec": "paper"},
             "V5.1 God Mode": {"desc": "An advanced portfolio allocator that dynamically rebalances based on market sentiment and volume anomalies, aiming for steady growth with managed drawdowns.", "file": "v5_1.py", "exec": "paper"},
             "V9 Kinetic God": {"desc": "Production Quantitative Scanner using Kinetic Energy Math, Calculus Deceleration, and dynamic Z-scores.", "file": "algo_v9_kinetic_god.py", "exec": "paper"},
-            "V43 Whipsaw Killer": {"desc": "The ultimate Gold Future AI using HMM and Kalman Filter with CHOP indicator to avoid fractal consolidations. Supports Exness MT5 Cent account.", "file": "v43.py", "exec": "real", "algo_type": "forex", "trading_type": "future"}
+            "V43 Whipsaw Killer": {"desc": "The ultimate Gold Future AI using HMM and Kalman Filter with CHOP indicator to avoid fractal consolidations. Supports Exness MT5 Cent account.", "file": "v43.py", "exec": "real", "algo_type": "forex", "trading_type": "future"},
+            "ML Predict Entry Point": {"desc": "Pooled XGBoost model scoring P(+100%/30d rally starts here) per coin from strict n-1 features (scale-free TA + publication-lagged macro + Fear&Greed). Allocates to the top probabilities above the model's trained threshold.", "file": "ml_predict_entry.py", "exec": "paper"}
         }
         for name, data in algos.items():
             port = db.query(database.Portfolio).filter(database.Portfolio.algorithm_name == name).first()

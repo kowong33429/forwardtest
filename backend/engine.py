@@ -259,11 +259,34 @@ def tick_engine(algo_name=None):
             positions = db.query(Position).filter(Position.portfolio_id == portfolio.id).all()
             current_holdings = [p.symbol for p in positions]
             logger.info(f"  Current holdings for {current_algo_name}: {current_holdings}")
-            
+
+            # 3a. Per-algo FIXED universe (isolated to this portfolio).
+            # Some algos (e.g. ML Predict Entry Point) scan a fixed basket rather
+            # than the shared top-volume list. If the module declares UNIVERSE,
+            # fetch any basket symbols missing from the shared market_data so the
+            # engine has prices to BOTH score and execute them. Algos that do not
+            # declare UNIVERSE keep the shared market_data unchanged.
+            pf_market_data = market_data
+            algo_universe = getattr(algo_module, 'UNIVERSE', None)
+            if algo_universe:
+                pf_market_data = dict(market_data)
+                missing = [s for s in algo_universe if s not in pf_market_data]
+                fetched = 0
+                for s in missing:
+                    try:
+                        df_s = data_fetcher.fetch_klines(s, interval="4h", algo_type=algo_type)
+                        if df_s is not None and not df_s.empty:
+                            pf_market_data[s] = df_s
+                            fetched += 1
+                    except Exception as e:
+                        logger.warning(f"  [universe] {s} fetch failed: {e}")
+                logger.info(f"  [universe] {current_algo_name}: fetched {fetched}/{len(missing)} "
+                            f"basket symbols (scan set {len(pf_market_data)})")
+
             # Calculate total portfolio value (cash + assets)
             total_value = portfolio.balance_usd
             current_prices = {}
-            for sym, df in market_data.items():
+            for sym, df in pf_market_data.items():
                 current_prices[sym] = float(df['close'].iloc[-1])
                 
             for pos in positions:
@@ -362,7 +385,7 @@ def tick_engine(algo_name=None):
             if 'live_execute' in sig.parameters:
                 kwargs['live_execute'] = getattr(portfolio, 'execution_type', 'paper') == 'real'
                 
-            targets, symbol_reasons = algo_func(market_data, **kwargs)
+            targets, symbol_reasons = algo_func(pf_market_data, **kwargs)
             logger.info(f"  Target Allocations: {targets}")
             
             # Save Engine Log for calculation process
