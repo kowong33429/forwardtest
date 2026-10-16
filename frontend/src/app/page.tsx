@@ -138,6 +138,15 @@ export default function Home() {
 
   const displayPortfolios = portfolios.filter((p: any) => !p.is_hidden).sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
+  // Forex lots: XAU = 100 oz/lot, FX = 100,000 units/lot (matches engine.forex_contract_size)
+  const contractSize = (port: any, symbol: string) =>
+    port.algo_type === 'forex' ? (symbol.toUpperCase().includes('XAU') ? 100 : 100000) : 1;
+
+  const futuresPnl = (port: any, pos: any, livePrice: number) => {
+    const diff = pos.direction === 'LONG' ? livePrice - pos.avg_entry_price : pos.avg_entry_price - livePrice;
+    return pos.amount * diff * contractSize(port, pos.symbol);
+  };
+
   const calculateTotalValue = (port: any) => {
     let total = port.balance_usd;
     if (port.positions) {
@@ -149,10 +158,7 @@ export default function Home() {
     if (port.futures_positions) {
       port.futures_positions.forEach((pos: any) => {
         const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
-        const pnl = pos.direction === 'LONG' 
-          ? pos.amount * (livePrice - pos.avg_entry_price)
-          : pos.amount * (pos.avg_entry_price - livePrice);
-        total += pnl;
+        total += futuresPnl(port, pos, livePrice);
       });
     }
     return total;
@@ -308,14 +314,14 @@ export default function Home() {
                       <tbody>
                         {groupPositions([...(port.positions || []), ...(port.futures_positions || [])]).map((pos: any) => {
                           const livePrice = prices.find(p => p.symbol === pos.symbol)?.price || pos.avg_entry_price;
-                          const initialCost = pos.amount * pos.avg_entry_price;
                           const isFutures = pos.direction !== undefined;
-                          
+                          const initialCost = pos.amount * pos.avg_entry_price * (isFutures ? contractSize(port, pos.symbol) : 1);
+
                           let pnlUsd = 0;
                           let currentValue = 0;
-                          
+
                           if (isFutures) {
-                              pnlUsd = pos.direction === 'LONG' ? pos.amount * (livePrice - pos.avg_entry_price) : pos.amount * (pos.avg_entry_price - livePrice);
+                              pnlUsd = futuresPnl(port, pos, livePrice);
                               currentValue = pnlUsd; // For futures, we show PnL as current value or Margin (just show PnL for simplicity)
                           } else {
                               currentValue = pos.amount * livePrice;
