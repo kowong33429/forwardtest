@@ -64,6 +64,119 @@ def cleanup_old_logs(db):
     except Exception as e:
         logger.error(f"Error during log cleanup: {e}")
 
+MT5_MAGIC = 234000  # magic number the bridge stamps on every order we send
+MT5_DEAL_REASONS = {0: "Manual (Client)", 1: "Mobile", 2: "Web", 3: "Expert/API", 4: "Stop Loss", 5: "Take Profit", 6: "Stop Out"}
+
+def log_system_event(db, portfolio_id, message, **extra):
+    """Write a SYSTEM entry to engine_logs so every MT5 action is traceable from the UI."""
+    db.add(EngineLog(portfolio_id=portfolio_id, logs_json=safe_dumps({"SYSTEM": {"decision_logic": message, **extra}})))
+    db.commit()
+
+def forex_contract_size(symbol):
+    # XAU: 1 lot = 100 oz (Cent account: 100 USC per $1 move), FX pairs: 100,000 units/lot
+    return 100 if "XAU" in symbol.upper() else 100000
+
+def calc_futures_pnl(f_pos, exit_price, algo_type):
+    """Returns (profit_pct, profit_usd) for a futures position closed at exit_price."""
+    diff = exit_price - f_pos.avg_entry_price if f_pos.direction == "LONG" else f_pos.avg_entry_price - exit_price
+    profit_pct = (diff / f_pos.avg_entry_price) * 100
+    multiplier = forex_contract_size(f_pos.symbol) if algo_type == 'forex' else 1
+    return profit_pct, f_pos.amount * diff * multiplier
+
+def sync_mt5_balance(db, portfolio, label):
+    """Overwrite portfolio cash with the real MT5 balance (realized P&L is owned by MT5)."""
+    try:
+        mt5_acc = mt5_service.check_health()
+        if mt5_acc.get("status") == "connected" and mt5_acc.get("balance") and mt5_acc["balance"] > 0:
+            portfolio.balance_usd = mt5_acc["balance"]
+            db.commit()
+            logger.info(f"  [SYNC] {label}: portfolio {portfolio.algorithm_name} cash balance from MT5: {portfolio.balance_usd} (equity {mt5_acc.get('equity')})")
+    except Exception as e:
+        logger.error(f"  [SYNC] Failed to sync MT5 balance: {e}")
+
+def close_mt5_position(f_pos, comment):
+    """
+    Close one MT5 position by its ticket (never by sending an opposite order:
+    on a hedging account that opens a second position instead of closing).
+    Returns {"ok": bool, "price": float|None, "profit": float|None, "message": str}.
+    """
+    if not f_pos.ticket_id:
+        return {"ok": False, "message": f"{f_pos.symbol} position has no MT5 ticket; refusing blind close"}
+    res = mt5_service.close_position(f_pos.ticket_id, comment=comment)
+    if res.get("status") == "success":
+        profit = res.get("profit")
+        if profit is not None:
+            profit += (res.get("commission") or 0) + (res.get("swap") or 0)
+        return {"ok": True, "price": res.get("price"), "profit": profit, "message": "already closed" if res.get("already_closed") else "closed"}
+    if res.get("status") == "not_found":
+        return {"ok": True, "price": None, "profit": None, "message": "position not found on MT5"}
+    return {"ok": False, "message": res.get("message", "Unknown error")}
+
+def reconcile_mt5_positions(db, portfolio, tradable_symbols):
+    """
+    Make futures_positions match what is really open on MT5:
+      - DB position whose ticket is gone from MT5 -> closed by broker (SL/TP/manual): record real P&L
+      - DB position whose volume/entry differs      -> update from MT5
+      - MT5 position (our magic) not tracked in DB  -> adopt it so the engine manages it
+    Returns False if MT5 positions could not be fetched (caller must not trade blind).
+    """
+    mt5_positions = mt5_service.get_open_positions()
+    if mt5_positions is None:
+        return False
+    open_by_ticket = {str(p.get('ticket')): p for p in mt5_positions}
+
+    f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
+    for f_pos in f_positions:
+        mp = open_by_ticket.get(str(f_pos.ticket_id)) if f_pos.ticket_id else None
+        if mp:
+            mp_dir = "LONG" if mp.get('type') == 0 else "SHORT"
+            if abs(float(mp['volume']) - f_pos.amount) > 1e-9 or mp_dir != f_pos.direction or abs(float(mp['price_open']) - f_pos.avg_entry_price) > 1e-6:
+                msg = (f"MT5 SYNC: corrected {f_pos.symbol} #{f_pos.ticket_id} from {f_pos.direction} {f_pos.amount}@{f_pos.avg_entry_price} "
+                       f"to {mp_dir} {mp['volume']}@{mp['price_open']}")
+                logger.warning(f"  {msg}")
+                f_pos.amount, f_pos.direction, f_pos.avg_entry_price = float(mp['volume']), mp_dir, float(mp['price_open'])
+                f_pos.sl, f_pos.tp = (mp.get('sl') or None), (mp.get('tp') or None)
+                db.commit()
+                log_system_event(db, portfolio.id, msg)
+            continue
+
+        if not f_pos.ticket_id:
+            logger.warning(f"  MT5 SYNC: {f_pos.symbol} DB position has no ticket; cannot reconcile")
+            continue
+
+        deals = mt5_service.get_position_deals(f_pos.ticket_id)
+        if not deals:
+            logger.warning(f"  MT5 SYNC: #{f_pos.ticket_id} not open on MT5 and no exit deals found; leaving DB position untouched")
+            continue
+
+        exit_price = float(deals['price'])
+        profit_pct, _ = calc_futures_pnl(f_pos, exit_price, portfolio.algo_type)
+        profit_usd = (deals.get('profit') or 0) + (deals.get('commission') or 0) + (deals.get('swap') or 0)
+        why = MT5_DEAL_REASONS.get(deals.get('reason'), f"reason {deals.get('reason')}")
+        msg = f"MT5 SYNC: {f_pos.symbol} #{f_pos.ticket_id} was closed on MT5 ({why}) at {exit_price}, P&L {profit_usd:.2f}"
+        logger.info(f"  {msg}")
+        db.add(FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount,
+                            price=exit_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=msg, ticket_id=f_pos.ticket_id))
+        db.delete(f_pos)
+        db.commit()
+        log_system_event(db, portfolio.id, msg)
+
+    tracked = {str(t[0]) for t in db.query(FuturesPosition.ticket_id).filter(FuturesPosition.ticket_id.isnot(None)).all()}
+    for ticket, mp in open_by_ticket.items():
+        if ticket in tracked or mp.get('magic') != MT5_MAGIC or mp.get('symbol') not in tradable_symbols:
+            continue
+        direction = "LONG" if mp.get('type') == 0 else "SHORT"
+        msg = (f"MT5 SYNC: adopted untracked MT5 position {mp['symbol']} #{ticket} {direction} {mp['volume']}@{mp['price_open']} "
+               f"(comment '{mp.get('comment')}'); engine will manage it from now on")
+        logger.warning(f"  {msg}")
+        db.add(FuturesPosition(portfolio_id=portfolio.id, symbol=mp['symbol'], direction=direction, amount=float(mp['volume']),
+                               avg_entry_price=float(mp['price_open']), sl=(mp.get('sl') or None), tp=(mp.get('tp') or None), ticket_id=ticket))
+        db.add(FuturesTrade(portfolio_id=portfolio.id, symbol=mp['symbol'], direction=direction, action="OPEN", amount=float(mp['volume']),
+                            price=float(mp['price_open']), reason=msg, ticket_id=ticket))
+        db.commit()
+        log_system_event(db, portfolio.id, msg)
+    return True
+
 def monitor_forex_positions(portfolio_id: int):
     """
     Run hourly to check Trailing Stop and Emergency Exit for Forex positions.
@@ -73,6 +186,11 @@ def monitor_forex_positions(portfolio_id: int):
         portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
         if not portfolio: return
         
+        is_real = getattr(portfolio, 'execution_type', 'paper') == 'real'
+        if is_real and not reconcile_mt5_positions(db, portfolio, {"XAUUSDc"}):
+            logger.error("Monitor: could not fetch MT5 positions; skipping this run")
+            return
+
         f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio_id).all()
         if not f_positions: return
         
@@ -89,26 +207,22 @@ def monitor_forex_positions(portfolio_id: int):
             
             if not entry_atr: continue # Backward compatibility
             
-            # 1. Trailing Stop
+            # 1. Trailing Stop (move SL to breakeven once price runs 1.5 ATR in our favour)
+            new_sl = None
             if f_pos.direction == "LONG" and (current_price - entry_price) >= 1.5 * entry_atr:
                 new_sl = max(f_pos.sl or 0, entry_price)
-                if new_sl != f_pos.sl:
-                    if f_pos.ticket_id:
-                        res = mt5_service.modify_position(f_pos.ticket_id, new_sl, f_pos.tp)
-                        if res.get("status") == "success":
-                            f_pos.sl = new_sl
-                            db.commit()
-                            logger.info(f"Trailing Stop activated for {f_pos.symbol} LONG: SL moved to {new_sl}")
-                            
             elif f_pos.direction == "SHORT" and (entry_price - current_price) >= 1.5 * entry_atr:
                 new_sl = min(f_pos.sl or float('inf'), entry_price)
-                if new_sl != f_pos.sl:
-                    if f_pos.ticket_id:
-                        res = mt5_service.modify_position(f_pos.ticket_id, new_sl, f_pos.tp)
-                        if res.get("status") == "success":
-                            f_pos.sl = new_sl
-                            db.commit()
-                            logger.info(f"Trailing Stop activated for {f_pos.symbol} SHORT: SL moved to {new_sl}")
+            if new_sl is not None and new_sl != f_pos.sl and f_pos.ticket_id:
+                res = mt5_service.modify_position(f_pos.ticket_id, new_sl, f_pos.tp or 0)
+                if res.get("status") == "success":
+                    f_pos.sl = new_sl
+                    db.commit()
+                    msg = f"TRAILING STOP: {f_pos.symbol} {f_pos.direction} #{f_pos.ticket_id} SL moved to {new_sl} (price {current_price})"
+                    logger.info(msg)
+                    log_system_event(db, portfolio.id, msg)
+                else:
+                    logger.error(f"Trailing Stop modify failed for #{f_pos.ticket_id}: {res.get('message')}")
                             
             # 2. Emergency Exit
             raw_risk = getattr(f_pos, 'raw_risk_pct', 0)
@@ -120,20 +234,30 @@ def monitor_forex_positions(portfolio_id: int):
                     is_emergency = True
                     
                 if is_emergency:
-                    close_dir = "SHORT" if f_pos.direction == "LONG" else "LONG"
-                    if f_pos.ticket_id:
-                        res = mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Emergency Exit")
-                        if res.get("status") == "success":
-                            logger.info(f"Emergency Exit triggered for {f_pos.symbol} {f_pos.direction}")
+                    exit_price, profit_usd = current_price, None
+                    if is_real:
+                        res = close_mt5_position(f_pos, comment="Emergency Exit")
+                        if not res["ok"]:
+                            msg = f"EMERGENCY EXIT FAILED: {f_pos.symbol} #{f_pos.ticket_id}: {res['message']}"
+                            logger.error(msg)
+                            log_system_event(db, portfolio.id, msg)
+                            continue
+                        exit_price = res.get("price") or current_price
+                        profit_usd = res.get("profit")
                             
-                            profit_pct = ((current_price - entry_price) / entry_price) * 100 if f_pos.direction == "LONG" else ((entry_price - current_price) / entry_price) * 100
-                            profit_usd = f_pos.amount * (current_price - entry_price) if f_pos.direction == "LONG" else f_pos.amount * (entry_price - current_price)
-                            
-                            portfolio.balance_usd += profit_usd
-                            f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=f"Emergency Exit")
-                            db.add(f_trade)
-                            db.delete(f_pos)
-                            db.commit()
+                    profit_pct, calc_usd = calc_futures_pnl(f_pos, exit_price, portfolio.algo_type)
+                    if profit_usd is None:
+                        profit_usd = calc_usd
+                    msg = f"EMERGENCY EXIT: {f_pos.symbol} {f_pos.direction} #{f_pos.ticket_id} closed at {exit_price} (adverse move >= 0.8 ATR), P&L {profit_usd:.2f}"
+                    logger.info(msg)
+                    f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=exit_price, profit_pct=profit_pct, profit_usd=profit_usd, reason="Emergency Exit", ticket_id=f_pos.ticket_id)
+                    db.add(f_trade)
+                    db.delete(f_pos)
+                    db.commit()
+                    log_system_event(db, portfolio.id, msg)
+
+        if is_real:
+            sync_mt5_balance(db, portfolio, "after monitor")
 
     except Exception as e:
         logger.error(f"Error in monitor_forex_positions: {e}")
@@ -242,15 +366,13 @@ def tick_engine(algo_name=None):
             # --- SYNC REAL ACCOUNT BALANCE ---
             execution_type = getattr(portfolio, 'execution_type', 'paper')
             if execution_type == 'real' and algo_type == 'forex':
-                try:
-                    mt5_acc = mt5_service.check_health()
-                    if mt5_acc.get("status") == "connected" and mt5_acc.get("balance"):
-                        if mt5_acc["balance"] > 0:
-                            portfolio.balance_usd = mt5_acc["balance"]
-                            db.commit()
-                            logger.info(f"  [SYNC] Updated portfolio {current_algo_name} cash balance from MT5: {portfolio.balance_usd}")
-                except Exception as e:
-                    logger.error(f"  [SYNC] Failed to sync MT5 balance: {e}")
+                # Reconcile DB positions with MT5 before deciding anything; never trade blind
+                if not reconcile_mt5_positions(db, portfolio, set(market_data.keys())):
+                    msg = "MT5 SYNC FAILED: could not fetch open positions from bridge. Skipping tick to avoid duplicate orders."
+                    logger.error(f"  {msg}")
+                    log_system_event(db, portfolio.id, msg)
+                    continue
+                sync_mt5_balance(db, portfolio, "before tick")
             # ---------------------------------
                 
             logger.info(f"Step 2: Processing algorithm '{current_algo_name}'... Current Balance: ${portfolio.balance_usd:.2f}")
@@ -325,7 +447,9 @@ def tick_engine(algo_name=None):
                         if pos.symbol in current_holdings:
                             current_holdings.remove(pos.symbol)
             # 3.6. Execute pending Stop Loss & Take Profit for Futures (Paper Trading Simulation)
-            f_positions = db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
+            # Real MT5 accounts: SL/TP fire on the broker side and are picked up by reconcile_mt5_positions
+            is_real_forex = getattr(portfolio, 'execution_type', 'paper') == 'real' and algo_type == 'forex'
+            f_positions = [] if is_real_forex else db.query(FuturesPosition).filter(FuturesPosition.portfolio_id == portfolio.id).all()
             for f_pos in f_positions[:]:
                 if f_pos.symbol in current_prices:
                     current_price = current_prices[f_pos.symbol]
@@ -346,7 +470,7 @@ def tick_engine(algo_name=None):
                         profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
                         logger.info(f"  Futures {close_reason} ({profit_pct:.1f}%) triggered for {f_pos.symbol} at {current_price:.4f}")
                         
-                        profit_usd = f_pos.amount * (current_price - f_pos.avg_entry_price) if f_pos.direction == "LONG" else f_pos.amount * (f_pos.avg_entry_price - current_price)
+                        _, profit_usd = calc_futures_pnl(f_pos, current_price, algo_type)
                         portfolio.balance_usd += profit_usd
                         
                         f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=f"{close_reason} ({profit_pct:.1f}%)")
@@ -453,8 +577,8 @@ def tick_engine(algo_name=None):
                             
                     # If target is 0, or we need to flip direction, OR should_early_exit
                     if should_early_exit or target_weight == 0 or (target_weight > 0 and f_pos.direction == 'SHORT') or (target_weight < 0 and f_pos.direction == 'LONG'):
-                        profit_pct = ((current_price - f_pos.avg_entry_price) / f_pos.avg_entry_price) * 100 if f_pos.direction == "LONG" else ((f_pos.avg_entry_price - current_price) / f_pos.avg_entry_price) * 100
-                        profit_usd = f_pos.amount * (current_price - f_pos.avg_entry_price) if f_pos.direction == "LONG" else f_pos.amount * (f_pos.avg_entry_price - current_price)
+                        exit_price = current_price
+                        realized_usd = None
                         
                         reason_msg = "Momentum Guard: Early Exit" if should_early_exit else safe_dumps(symbol_reasons.get(f_pos.symbol))
                         if getattr(portfolio, 'execution_type', 'paper') == 'real':
@@ -469,17 +593,28 @@ def tick_engine(algo_name=None):
                                     logger.error(f"Binance close failed: {e}")
                                     execution_success = False
                             elif algo_type == 'forex':
-                                res = mt5_service.execute_trade(f_pos.symbol, close_dir, f_pos.amount, sl=0, tp=0, comment="Close position")
-                                if res.get("status") != "success":
-                                    logger.error(f"MT5 close failed: {res.get('message')}")
+                                res = close_mt5_position(f_pos, comment="Close position")
+                                if not res["ok"]:
+                                    msg = f"MT5 CLOSE FAILED: {f_pos.symbol} #{f_pos.ticket_id}: {res['message']}"
+                                    logger.error(msg)
+                                    log_system_event(db, portfolio.id, msg)
                                     execution_success = False
+                                else:
+                                    exit_price = res.get("price") or current_price
+                                    realized_usd = res.get("profit")
+                                    log_system_event(db, portfolio.id, f"MT5 CLOSE: {f_pos.symbol} {f_pos.direction} #{f_pos.ticket_id} {res['message']} at {exit_price}, P&L {realized_usd}")
                                     
                             if not execution_success:
                                 continue # skip saving this trade since execution failed
                                 
-                        portfolio.balance_usd += profit_usd
+                        profit_pct, profit_usd = calc_futures_pnl(f_pos, exit_price, algo_type)
+                        if realized_usd is not None:
+                            profit_usd = realized_usd
+                        # Real MT5 accounts: balance is re-synced from MT5 after the tick (no double counting)
+                        if not is_real_forex:
+                            portfolio.balance_usd += profit_usd
                         
-                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=current_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=reason_msg)
+                        f_trade = FuturesTrade(portfolio_id=portfolio.id, symbol=f_pos.symbol, direction=f_pos.direction, action="CLOSE", amount=f_pos.amount, price=exit_price, profit_pct=profit_pct, profit_usd=profit_usd, reason=reason_msg, ticket_id=f_pos.ticket_id)
                         db.add(f_trade)
                         db.commit()
                         db.refresh(f_trade)
@@ -488,7 +623,7 @@ def tick_engine(algo_name=None):
                         if getattr(portfolio, 'is_ai_enabled', 1):
                             ai_executor.submit(
                                 async_generate_trade_insight_worker, 
-                                f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, current_price, current_algo_name
+                                f_trade.id, f_pos.symbol, f"CLOSE {f_pos.direction}", profit_pct, f_pos.avg_entry_price, exit_price, current_algo_name
                             )
                             
                         db.delete(f_pos)
@@ -564,41 +699,29 @@ def tick_engine(algo_name=None):
                                     logger.error(f"Binance trade failed: {e}")
                                     execution_success = False
                             elif algo_type == 'forex':
-                                already_open = False
-                                try:
-                                    open_positions = mt5_service.get_open_positions()
-                                    if isinstance(open_positions, list):
-                                        for mp in open_positions:
-                                            # Check that symbol matches AND comment indicates it's from our app
-                                            # We use "Open position" as that's what the engine passes to execute_trade
-                                            if mp.get('symbol') == sym and "Open position" in str(mp.get('comment', '')):
-                                                already_open = True
-                                                ticket_id = mp.get('ticket')
-                                                if mp.get('price_open'):
-                                                    current_price = float(mp.get('price_open'))
-                                                break
-                                except Exception as e:
-                                    logger.error(f"Failed to check MT5 open positions: {e}")
+                                # Any MT5 position for this symbol was already adopted into f_positions by
+                                # reconcile_mt5_positions, so reaching here means MT5 really has nothing open.
+                                raw_sl = symbol_reasons.get(sym, {}).get("sl")
+                                raw_tp = symbol_reasons.get(sym, {}).get("tp")
+                                sl_val_api = round(float(raw_sl), 3) if raw_sl not in (None, "", "None", "null") else 0.0
+                                tp_val_api = round(float(raw_tp), 3) if raw_tp not in (None, "", "None", "null") else 0.0
                                 
-                                if already_open:
-                                    logger.warning(f"Order for {sym} is already open on MT5 (Ticket: {ticket_id}). Skipping new order and recovering to DB.")
-                                    execution_success = True
-                                else:
-                                    raw_sl = symbol_reasons.get(sym, {}).get("sl")
-                                    raw_tp = symbol_reasons.get(sym, {}).get("tp")
-                                    sl_val_api = round(float(raw_sl), 3) if raw_sl not in (None, "", "None", "null") else 0.0
-                                    tp_val_api = round(float(raw_tp), 3) if raw_tp not in (None, "", "None", "null") else 0.0
-                                    
-                                    res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
-                                    if res.get("status") != "success":
-                                        msg = res.get('message', '')
-                                        if "closed" in msg.lower():
-                                            logger.info(f"Skipping trade, MT5 Market is closed.")
-                                        else:
-                                            logger.error(f"MT5 open failed: {msg}")
-                                        execution_success = False
+                                res = mt5_service.execute_trade(sym, direction, buy_amount, sl=sl_val_api, tp=tp_val_api, comment="Open position")
+                                if res.get("status") != "success":
+                                    msg = res.get('message', '')
+                                    if "closed" in msg.lower():
+                                        logger.info(f"Skipping trade, MT5 Market is closed.")
                                     else:
-                                        ticket_id = res.get("ticket")
+                                        logger.error(f"MT5 open failed: {msg}")
+                                    log_system_event(db, portfolio.id, f"MT5 OPEN FAILED: {direction} {buy_amount} {sym}: {msg}")
+                                    execution_success = False
+                                else:
+                                    ticket_id = res.get("ticket")
+                                    if res.get("price"):
+                                        current_price = float(res["price"])
+                                    if res.get("volume"):
+                                        buy_amount = float(res["volume"])
+                                    log_system_event(db, portfolio.id, f"MT5 OPEN: {direction} {buy_amount} {sym} #{ticket_id} at {current_price} (SL {sl_val_api}, TP {tp_val_api})")
                                     
                         if execution_success:
                             sl_val = symbol_reasons.get(sym, {}).get("sl")
@@ -634,7 +757,10 @@ def tick_engine(algo_name=None):
                         trade = Trade(portfolio_id=portfolio.id, symbol=sym, action="BUY", amount=buy_amount, price=current_price, reason=safe_dumps(symbol_reasons.get(sym)))
                         db.add(trade)
                         db.commit()
-                        
+
+            if is_real_forex:
+                sync_mt5_balance(db, portfolio, "after tick")
+
         # Step 5: Clean up old logs if enabled
         cleanup_old_logs(db)
         

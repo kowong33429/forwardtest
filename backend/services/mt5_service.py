@@ -59,13 +59,54 @@ def execute_trade(symbol, direction, volume, sl, tp, comment="ForwardTest AI"):
         
         result = resp.json()
         if result.get("success"):
-            return {"status": "success", "ticket": result.get("order_ticket")}
+            return {"status": "success", "ticket": result.get("order_ticket"), "price": result.get("price"), "volume": result.get("volume")}
         else:
             return {"status": "error", "message": result.get("message", "Unknown error")}
             
     except Exception as e:
         logger.error(f"Trade execution failed: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+def close_position(ticket, comment="Close position"):
+    """
+    Closes a specific position by ticket via the Bridge API.
+    Never send an opposite market order instead: on a hedging account that opens a new position.
+    Returns realized profit/price from MT5 deal history when available.
+    """
+    try:
+        payload = {"ticket": int(ticket), "comment": comment}
+        resp = requests.post(f"{BASE_URL}/close", json=payload, headers=HEADERS, timeout=30)
+        if resp.status_code == 404:
+            detail = resp.json().get("detail", "")
+            if "Position" not in str(detail):
+                # Old bridge without /close: do NOT fall back to an opposite order (opens a hedge)
+                return {"status": "error", "message": "Bridge has no /close endpoint; deploy the updated mt5-bridge"}
+            return {"status": "not_found", "message": detail}
+        resp.raise_for_status()
+
+        result = resp.json()
+        if result.get("success"):
+            return {"status": "success", **result}
+        return {"status": "error", "message": result.get("message", "Unknown error")}
+
+    except Exception as e:
+        logger.error(f"Close position {ticket} failed: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+def get_position_deals(ticket):
+    """
+    Fetches the realized exit (price/profit/reason) of a closed position via the Bridge API.
+    Returns None if the position has no exit deals (still open or unknown).
+    """
+    try:
+        resp = requests.get(f"{BASE_URL}/deals", params={"ticket": int(ticket)}, headers=HEADERS, timeout=15)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch deals for position {ticket}: {str(e)}")
+        return None
 
 def fetch_historical_klines(symbol, timeframe="4h", limit=250):
     """
@@ -103,6 +144,7 @@ def fetch_historical_klines(symbol, timeframe="4h", limit=250):
 def get_open_positions():
     """
     Fetches all open positions via our custom Bridge API.
+    Returns None (not []) on failure so callers can tell "no positions" from "unknown".
     """
     try:
         resp = requests.get(f"{BASE_URL}/positions", headers=HEADERS, timeout=10)
@@ -110,7 +152,7 @@ def get_open_positions():
         return resp.json()
     except Exception as e:
         logger.error(f"Failed to fetch open positions: {str(e)}")
-        return []
+        return None
 
 def modify_position(ticket, sl, tp):
     """
