@@ -22,6 +22,10 @@ class ModifyRequest(BaseModel):
     sl: float = 0.0
     tp: float = 0.0
 
+class CloseRequest(BaseModel):
+    ticket: int
+    comment: str = "Close position"
+
 # ==========================================
 # 2. FastAPI Setup & MT5 Lifecycle
 # ==========================================
@@ -140,6 +144,80 @@ def execute_trade(req: TradeRequest):
         "price": result.price,
         "volume": result.volume
     }
+
+def _exit_deals(ticket: int):
+    """ดึง Deal ฝั่งปิด (DEAL_ENTRY_OUT / OUT_BY) ของ position นี้"""
+    deals = mt5.history_deals_get(position=ticket) or []
+    return [d for d in deals if d.entry in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_OUT_BY)]
+
+def _summarize_exit(ticket: int):
+    exits = _exit_deals(ticket)
+    if not exits:
+        return None
+    volume = sum(d.volume for d in exits)
+    return {
+        "price": sum(d.price * d.volume for d in exits) / volume if volume else exits[-1].price,
+        "volume": volume,
+        "profit": sum(d.profit for d in exits),
+        "commission": sum(d.commission for d in exits),
+        "swap": sum(d.swap for d in exits),
+        "time": int(exits[-1].time),
+        "reason": int(exits[-1].reason),  # 4=SL, 5=TP, 6=Stop out
+    }
+
+@app.post("/close")
+def close_position(req: CloseRequest):
+    """ปิด Position ตาม ticket (ใส่ field 'position' เพื่อไม่ให้บัญชี Hedging เปิดออเดอร์สวนใหม่)"""
+    if not mt5.terminal_info():
+        mt5.initialize()
+
+    positions = mt5.positions_get(ticket=req.ticket)
+    if not positions:
+        summary = _summarize_exit(req.ticket)
+        if summary:
+            return {"success": True, "already_closed": True, **summary}
+        raise HTTPException(status_code=404, detail=f"Position {req.ticket} not found")
+
+    pos = positions[0]
+    tick = mt5.symbol_info_tick(pos.symbol)
+    if pos.type == mt5.POSITION_TYPE_BUY:
+        order_type, price = mt5.ORDER_TYPE_SELL, tick.bid
+    else:
+        order_type, price = mt5.ORDER_TYPE_BUY, tick.ask
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "position": pos.ticket,
+        "symbol": pos.symbol,
+        "volume": pos.volume,
+        "type": order_type,
+        "price": price,
+        "deviation": 20,
+        "magic": pos.magic,
+        "comment": req.comment,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    result = mt5.order_send(request)
+    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        return {
+            "success": False,
+            "error_code": result.retcode if result else None,
+            "message": result.comment if result else str(mt5.last_error())
+        }
+
+    summary = _summarize_exit(pos.ticket) or {"price": result.price, "volume": result.volume, "profit": None}
+    return {"success": True, "already_closed": False, "order_ticket": result.order, **summary}
+
+@app.get("/deals")
+def get_position_deals(ticket: int):
+    """สรุปผลการปิดของ position (ใช้ตอน position โดน SL/TP ฝั่งโบรกเกอร์)"""
+    if not mt5.terminal_info():
+        mt5.initialize()
+    summary = _summarize_exit(ticket)
+    if summary is None:
+        raise HTTPException(status_code=404, detail=f"No exit deals for position {ticket}")
+    return summary
 
 @app.get("/history")
 def get_history(symbol: str, timeframe: str = "4h", limit: int = 250):
