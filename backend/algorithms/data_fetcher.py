@@ -1,4 +1,7 @@
 import requests
+import json
+import threading
+from urllib.parse import quote
 import pandas as pd
 import numpy as np
 import traceback
@@ -18,6 +21,12 @@ BINANCE_BASE_URLS = [
 ]
 
 _best_binance_url = None
+
+# Cache of the USDT volume ranking. The full /ticker/24hr payload is ~2 MB, so we
+# only fetch it every RANKING_TTL seconds and keep just the symbol names, not the payload.
+RANKING_TTL = 300
+_ranking_lock = threading.Lock()
+_ranking_cache = {"ts": 0.0, "ranked": [], "all": frozenset()}
 
 def safe_binance_request(endpoint):
     """
@@ -48,7 +57,7 @@ def safe_binance_request(endpoint):
                     if "restricted location" in data.get("msg").lower():
                         logger.warning(f"Geo-blocked at {url}: {data.get('msg')}")
                         continue # Try next URL
-                logger.info(f"Successfully fetched data from {url}. Payload size: {len(str(data))} characters.")
+                logger.info(f"Successfully fetched data from {url}. Payload size: {len(response.content)} bytes.")
                 _best_binance_url = base_url
                 return data
             else:
@@ -63,23 +72,43 @@ def safe_binance_request(endpoint):
     logger.error(f"CRITICAL: All Binance endpoints failed for endpoint {endpoint}. Last error: {last_error}")
     return None
 
+def _is_tradable_usdt(sym):
+    return sym.endswith('USDT') and 'UP' not in sym and 'DOWN' not in sym
+
+def _get_usdt_ranking():
+    """
+    Returns (ranked_symbols, all_usdt_symbols), cached for RANKING_TTL seconds.
+    Uses type=MINI to roughly halve the payload; the parsed list is discarded right after ranking.
+    """
+    with _ranking_lock:
+        if _ranking_cache["ranked"] and time.time() - _ranking_cache["ts"] < RANKING_TTL:
+            return _ranking_cache["ranked"], _ranking_cache["all"]
+
+        data = safe_binance_request("/api/v3/ticker/24hr?type=MINI")
+        if not data or not isinstance(data, list):
+            # Serve stale ranking rather than nothing
+            return _ranking_cache["ranked"], _ranking_cache["all"]
+
+        usdt_pairs = [(d['symbol'], float(d['quoteVolume'])) for d in data if _is_tradable_usdt(d['symbol'])]
+        del data
+        usdt_pairs.sort(key=lambda x: x[1], reverse=True)
+
+        _ranking_cache["ranked"] = [sym for sym, _ in usdt_pairs]
+        _ranking_cache["all"] = frozenset(_ranking_cache["ranked"])
+        _ranking_cache["ts"] = time.time()
+        return _ranking_cache["ranked"], _ranking_cache["all"]
+
 def get_top_volume_symbols(limit=30):
     """Fetch Top N USDT pairs by 24h volume on Binance (Free, No API Key)"""
     try:
-        data = safe_binance_request("/api/v3/ticker/24hr")
-        
-        if not data or not isinstance(data, list):
-            print(f"Binance API error or unexpected format: {data}")
+        ranked, _ = _get_usdt_ranking()
+
+        if not ranked:
+            print("Binance API error: empty volume ranking")
             return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"] # Fallback
-            
-        # Filter for USDT pairs, exclude stablecoins/derivatives if possible
-        usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
-        
-        # Sort by volume (quote volume is usually better for USD value)
-        usdt_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-        
+
         # Pick top limit symbols, ensuring BTC is included
-        symbols = [p['symbol'] for p in usdt_pairs[:limit]]
+        symbols = ranked[:limit]
         if 'BTCUSDT' not in symbols:
             symbols[0] = 'BTCUSDT'
             
@@ -148,19 +177,26 @@ def get_market_data(additional_symbols=None, algo_type="crypto"):
 def get_live_prices(limit=50, additional_symbols=None):
     """Fetch live prices for the top N USDT pairs plus any additionally specified symbols"""
     try:
-        data = safe_binance_request("/api/v3/ticker/24hr")
-        
+        ranked, all_usdt = _get_usdt_ranking()
+        if not ranked:
+            return []
+
+        wanted = list(ranked[:limit])
+        if 'BTCUSDT' not in wanted:
+            wanted.insert(0, 'BTCUSDT')
+        if additional_symbols:
+            wanted.extend(s for s in additional_symbols if s in all_usdt and s not in wanted)
+
+        # Only request the symbols we display (~KBs instead of ~2 MB)
+        symbols_param = quote(json.dumps(wanted, separators=(',', ':')))
+        data = safe_binance_request(f"/api/v3/ticker/24hr?symbols={symbols_param}")
+
         if not data or not isinstance(data, list):
             return []
-            
-        usdt_pairs = [d for d in data if d['symbol'].endswith('USDT') and 'UP' not in d['symbol'] and 'DOWN' not in d['symbol']]
-        usdt_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-        
-        top_pairs = usdt_pairs[:limit]
-        if additional_symbols:
-            held_pairs = [d for d in usdt_pairs if d['symbol'] in additional_symbols and d not in top_pairs]
-            top_pairs.extend(held_pairs)
-            
+
+        by_symbol = {d['symbol']: d for d in data}
+        top_pairs = [by_symbol[s] for s in wanted if s in by_symbol]
+
         # Format for frontend
         prices = [{"symbol": p['symbol'], "price": float(p['lastPrice']), "change": float(p['priceChangePercent'])} for p in top_pairs]
         
@@ -190,12 +226,6 @@ def get_live_prices(limit=50, additional_symbols=None):
                 except Exception as e:
                     logger.warning(f"Failed to fetch live price for MT5 symbol {sym}: {e}")
         
-        # Ensure BTC is always there for demo purposes
-        if not any(p['symbol'] == 'BTCUSDT' for p in prices):
-            btc_data = next((p for p in usdt_pairs if p['symbol'] == 'BTCUSDT'), None)
-            if btc_data:
-                prices[0] = {"symbol": btc_data['symbol'], "price": float(btc_data['lastPrice']), "change": float(btc_data['priceChangePercent'])}
-                
         return prices
     except Exception as e:
         traceback.print_exc()
